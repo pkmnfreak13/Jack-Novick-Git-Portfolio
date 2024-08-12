@@ -20,6 +20,15 @@
 
 ![image](https://github.com/user-attachments/assets/6881f1f0-e3d7-485e-a1d6-63fd2d1dea8e)
 
+
+
+# Transfer Scrape Script
+- Script used to analyze and collect all MLS transfers from any time range in the past 10 years.
+- Directly uploads into a main database.
+- Used to help forecast team payroll and spend resources more efficiently.
+
+
+
 # USPBL Analytics Hub
 
 
