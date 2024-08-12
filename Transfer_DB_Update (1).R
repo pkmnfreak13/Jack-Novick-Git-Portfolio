@@ -1,0 +1,630 @@
+s = Sys.time()
+
+# Source ID Join functions. 
+source("C:/Users/jackt/Downloads/Transfer_DB_Functions.R", local = T)
+
+# MLS Transfer Overview Page  ####################################################################################################################################
+year = format(Sys.Date(), "%Y")
+
+# MLS team names in Transfermarkt
+transfermarkt_teams <- sort(c("miami", "orlando", "new-york-city", "philadelphia", "toronto", 
+                              "atlanta", "cincinnati", "nashville", "montreal", "d-c-united",
+                              "charlotte", "columbus-crew", "columbus", "new-england", "new-york", "chicago",
+                              "austin", "st-louis-city", "minnesota", "lafc", "san-jose",
+                              "seattle", "houston", "dallas", "salt-lake", "vancouver",
+                              "portland", "kansas-city", "colorado", "los-angeles"))
+
+# URL based on season 
+url <- paste0("https://www.transfermarkt.us/major-league-soccer/transfers/wettbewerb/MLS1/plus/?saison_id=", year, "&s_w=&leihe=1&intern=0&intern=1")
+
+# Get player links.
+player_links <- read_html(url) %>%
+  html_elements(".responsive-table") %>%
+  html_elements(".hide-for-small") %>%
+  html_elements("a") %>%
+  html_attr("href")
+
+# Get unique links (unique players)
+player_links <- paste0("https://www.transfermarkt.us", player_links)
+unique_links <- unique(player_links)
+
+# Player Bios ####################################################################################################################################
+
+# scrape biographical data for each player. Initialize empty player_bios list and page.
+player_bios = list()
+page = 1
+
+for(i in page:length(unique_links)){
+  
+  url = unique_links[i]
+  
+  bio = read_html(url) %>%
+    html_elements(".info-table__content") %>%
+    html_text() %>%
+    trimws()
+  
+  # date of birth
+  dob_index = which(bio == "Date of birth/Age:") + 1
+  dob = sub(" \\(.*", "", bio[dob_index])
+  
+  # citizenship
+  citizen_index = which(bio == "Citizenship:") + 1
+  c = gsub("^\u00A0+", "", bio[citizen_index])
+  c = gsub("\u00A0+", ",", c)
+  
+  # position
+  position_index = which(bio == "Position:") + 1
+  pos = sub(" -.*", "", bio[position_index])
+  pos_det = sub(".* - ", "", bio[position_index])
+  
+  # additional info (may indicate if the player is a US permanent resident and doesn't require international slot)
+  additional_info = read_html(url) %>%
+    html_elements(".content") %>%
+    html_text() %>%
+    trimws() %>%
+    paste0(collapse = " ")
+  
+  # combine into dataframe and add to list
+  new_bio = tibble(url = url, dob = dob, citizenship = c, pos = pos, pos_detailed = pos_det, notes = additional_info)
+  player_bios = c(player_bios, list(new_bio))
+  
+  cat("Page", page, "--", url, "\n")
+  page = page + 1
+}
+
+player_bio_df = bind_rows(player_bios) %>%
+  as_tibble()
+
+# check for links that were missing information
+for(i in 1:length(player_bios)){
+  if(ncol(player_bios[[i]]) != 6 | nrow(player_bios[[i]]) != 1) {
+    print(i)
+  }
+}
+# manually add missing information (in this case, just one player)
+player_bio_df = rbind(player_bio_df, tibble(url = "https://www.transfermarkt.us/elian-haddock/profil/spieler/1089577",
+                                            dob = "Nov 30, 2001", citizenship = "United States", pos = "Goalkeeper",
+                                            pos_detailed = "Goalkeeper",
+                                            notes = "Elian Haddock is the brother of Jeremy Haddock (Without Club)."))
+
+
+# Player Transfer History  ####################################################################################################################################
+
+# Initialize empty player_transfer list and page. Only do this before running the loop for the first time. 
+player_transfers = list()
+page = 1
+
+# ************************************************************************************************************************************************
+# scrape player transfer data using RSelenium
+# necessary because the player transfer table appears to load dynamically
+# when using rvest and read_html() there is no html or data within the player transfer table (even though it is on the website)
+for(i in page:length(unique_links)) {
+  
+  player_link = unique_links[i]
+  
+  player_url = gsub("profil", "transfers", player_link)
+  
+  # access the link and dynamically scrape the html
+  driver <- rsDriver(port= sample(7600)[1], browser=c("firefox"), chromever = NULL, check = FALSE)
+  remDr <- driver$client
+  remDr$navigate(player_url)
+  Sys.sleep(5)
+  html_content <- remDr$getPageSource()[[1]]
+  remDr$close()
+  driver$server$stop()
+  
+  # read in html
+  player_html_in = read_html(html_content)
+  
+  # get player name from html
+  player_name = player_html_in %>%
+    html_elements(".data-header__headline-container") %>%
+    html_text() %>%
+    trimws()
+  player_name = gsub("^.*\n", "", player_name)
+  player_name = trimws(player_name)
+  
+  # get transfer history table headings from html
+  headings = player_html_in %>%
+    html_elements(".tm-transfer-history") %>%
+    html_elements(".grid__heading") %>%
+    html_text() %>%
+    trimws()
+  
+  # get transfer history table rows from html
+  rows = player_html_in %>%
+    html_elements(".tm-transfer-history") %>%
+    html_elements(".grid__cell") %>%
+    html_text() %>%
+    trimws()
+  
+  # get team IDs (team url) from the transfer history table
+  team_names_urls = player_html_in %>%
+    html_elements(".tm-transfer-history") %>%
+    html_elements(".grid__cell") %>%
+    html_elements("a") %>%
+    html_attr("href")
+  team_names = gsub("^/", "", team_names_urls)
+  team_names = gsub("/.*$", "", team_names)
+  
+  if(length(team_names) == 0){
+    
+    print(i)
+    break
+  }
+  
+  # some non-teams don't have URLs so they need to be added -- that's when a player's team is one of the following:
+  # Retired, Without Club, Career Break, Unknown, or Ban
+  adj_team_names = team_names
+  adj_team_names_urls = team_names_urls
+  
+  retired_index = which(team_names == "retired")
+  for(index in rev(retired_index)) {
+    adj_team_names = append(adj_team_names, "retired", after = index)
+    adj_team_names_urls = append(adj_team_names_urls, adj_team_names_urls[index], after = index)
+  }
+  
+  no_club_index = which(adj_team_names == "without-club")
+  for(index in rev(no_club_index)) {
+    adj_team_names = append(adj_team_names, "without-club", after = index)
+    adj_team_names_urls = append(adj_team_names_urls, adj_team_names_urls[index], after = index)
+  }
+  
+  cb_index = which(adj_team_names == "career-break")
+  for(index in rev(cb_index)) {
+    adj_team_names = append(adj_team_names, "career-break", after = index)
+    adj_team_names_urls = append(adj_team_names_urls, adj_team_names_urls[index], after = index)
+  }
+  
+  unk_index = which(adj_team_names == "unknown")
+  for(index in rev(unk_index)) {
+    adj_team_names = append(adj_team_names, "unknown", after = index)
+    adj_team_names_urls = append(adj_team_names_urls, adj_team_names_urls[index], after = index)
+  }
+  
+  dq_index = which(adj_team_names == "disqualification")
+  for(index in rev(dq_index)) {
+    adj_team_names = append(adj_team_names, "disqualification", after = index)
+    adj_team_names_urls = append(adj_team_names_urls, adj_team_names_urls[index], after = index)
+  }
+  
+  ban_index = which(adj_team_names == "bantm")
+  for(index in rev(ban_index)) {
+    adj_team_names = append(adj_team_names, "bantm", after = index)
+    adj_team_names_urls = append(adj_team_names_urls, adj_team_names_urls[index], after = index)
+  }
+  
+  # determine which IDs (urls) are for teams left and teams joined, and create vector for each
+  left_indexes = seq(1, length(adj_team_names), by = 4)
+  joined_indexes = seq(3, length(adj_team_names), by = 4)
+  left_teams = adj_team_names[left_indexes]
+  joined_teams = adj_team_names[joined_indexes]
+  
+  # get links of all teams listed in player transfer table (creates duplicate links)  
+  team_links = paste0("https://www.transfermarkt.us", adj_team_names_urls)
+  
+  # select relevant indexes corresponding to left teams, joined teams (removes duplicate links).   
+  adj_team_links = c(team_links[left_indexes], team_links[joined_indexes])
+  
+  # select indexes of leagues left, joined
+  left_team_links = adj_team_links[1:(length(adj_team_links)/2)]
+  joined_team_links = adj_team_links[(length(adj_team_links)/2 + 1):length(adj_team_links)]
+  
+  # convert all of transfer history information into a matrix
+  num_rows = length(rows) / length(headings)
+  rows_matrix = matrix(rows, ncol = length(headings), byrow = TRUE)  
+  
+  # combine with left and joined teams, player name, and url to form dataframe
+  df = data.frame(rows_matrix, stringsAsFactors = FALSE) %>%
+    mutate(player = player_name,
+           team1 = left_teams,
+           team2 = joined_teams,
+           left_team_link = left_team_links,
+           joined_team_link = joined_team_links,
+           url = player_link
+    ) %>%
+    select(player, everything())
+  
+  colnames(df) = c("Player", headings, "left_team", "joined_team", "left_team_link", "joined_team_link", "url")
+  colnames(df)[colnames(df) == ""] = "blank"
+  player_transfers = c(player_transfers, list(df))
+  
+  cat("Page", page, "complete\n")
+  page = page + 1
+  
+}
+
+# Combine all data into one dataframe and merge with player bio information
+player_transfers_df <- bind_rows(player_transfers) %>%
+  merge(player_bio_df, by = "url", all.x = TRUE)
+
+all_transfers = player_transfers_df %>%
+  rename(player = Player,
+         date = Date,
+         left = left_team,
+         joined = joined_team,
+         market_value = MV,
+         fee_euro = Fee,
+         pos_detail = pos_detailed) %>%
+  mutate(fee = fee_euro,
+         # parse market_value into numerical values
+         market_value = sub("k", "000", market_value),
+         market_value = sub("m", "0000", market_value),
+         market_value = sub("€", "", market_value),
+         market_value = sub("\\.", "", market_value),
+         market_value = case_when(market_value == "-" ~ NA,
+                                  TRUE ~ market_value),
+         market_value = as.integer(market_value),
+         # parse fee into numerical values
+         fee_euro = gsub("€", "", fee_euro),
+         fee_euro = gsub("k$", "000", fee_euro),
+         fee_euro = gsub("m", "0000", fee_euro),
+         fee_euro = gsub("\\.", "", fee_euro),
+         date = as.Date(date, "%b %d, %Y"),
+         birth_date = as.Date(dob, "%b %d, %Y"),
+         age_at_transfer = round(time_length(interval(birth_date, date), "years"), 2),
+         # convert position names to match internal / trade database names
+         pos = case_when(pos == "Attack" ~ "forward",
+                         TRUE ~ pos),
+         pos_detail = case_when(pos_detail == "Centre-Forward" ~ "forward",
+                                pos_detail == "Second Striker" ~ "striker",
+                                pos_detail == "Right Winger" | pos_detail == "Left Winger" ~ "winger",
+                                pos_detail == "Left-Back" ~ "left back",
+                                pos_detail == "Right-Back" ~ "right back",
+                                pos_detail == "Centre-Back" ~ "centerback",
+                                pos_detail == "Left Midfield" | pos_detail == "Right Midfield" | pos_detail == "Midfielder" ~ "midfield",
+                                TRUE ~ pos_detail),
+         across(c(pos, pos_detail), tolower),
+         loan_start = ifelse(grepl("Loan fee", fee_euro) | grepl("loan transfer", fee_euro), 1, 0),
+         loan_end = ifelse(grepl("End of loan", fee_euro), 1, 0),
+         draft = ifelse(fee_euro == "draft", 1, 0),
+         # further parse fee into numerical values 
+         fee_euro = gsub("Loan fee\\:", "", fee_euro),
+         fee_euro = gsub("loan transfer", "", fee_euro),
+         fee_euro = gsub("draft", "", fee_euro),
+         fee_euro = case_when(grepl("End of loan", fee_euro) ~ NA,
+                              fee_euro == "free transfer" ~ "0",
+                              fee_euro == "?" | fee_euro == "" | fee_euro == "-" ~ NA,
+                              TRUE ~ fee_euro),
+         fee_euro = as.numeric(fee_euro),
+         # manually add green card dates based on information in the notes column
+         green_card_date = case_when(url == "https://www.transfermarkt.us/przemyslaw-frankowski/profil/spieler/239743" ~ as.Date("Feb 2, 2021", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/luis-caicedo/profil/spieler/426609" ~ as.Date("Mar 22, 2021", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/francisco-calvo/profil/spieler/188470" ~ as.Date("Mar 26, 2018", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/chris-mccann/profil/spieler/36896" ~ as.Date("Feb 1, 2017", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/greg-ranjitsingh/profil/spieler/367436" ~ as.Date("May 1, 2020", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/tyrone-mears/profil/spieler/14050" ~ as.Date("Mar 29, 2016", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/kyle-adams/profil/spieler/562306" ~ as.Date("Jan 1, 2020", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/santiago-rodriguez/profil/spieler/465819" ~ as.Date("Jan 1, 2019", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/julian-gressel/profil/spieler/229640" ~ as.Date("May 29, 2019", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/ilie-sanchez/profil/spieler/65298" ~ as.Date("Sep 25, 2017", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/lalas-abubakar/profil/spieler/482611" ~ as.Date("Oct 15, 2018", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/sebastian-driussi/profil/spieler/294853"~ as.Date("Jan 13, 2024", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/bradley-wright-phillips/profil/spieler/28813" ~ as.Date("Mar 16, 2017", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/juan-david-cabezas/profil/spieler/84268" ~ as.Date("Jan 29, 2019", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/abu-danladi/profil/spieler/476676" ~ as.Date("Mar 26, 2018", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/harvey-neville/profil/spieler/593296" ~ as.Date("Aug 23, 2022", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/josef-martinez/profil/spieler/162569" ~ as.Date("Jul 9, 2018", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/michael-barrios/profil/spieler/313286" ~ as.Date("Apr 27, 2018", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/mauro-manotas/profil/spieler/325614" ~ as.Date("Feb 1, 2019", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/hector-villalba/profil/spieler/237061" ~ as.Date("Jan 1, 2018", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/romario-williams/profil/spieler/189782" ~ as.Date("Feb 1, 2018", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/darwin-ceren/profil/spieler/229330" ~ as.Date("Feb 1, 2015", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/rodney-redes/profil/spieler/664546" ~ as.Date("Jan 24, 2022", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/adam-lundkvist/profil/spieler/225676" ~ as.Date("Jan 1, 2019", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/darwin-quintero/profil/spieler/55666" ~ as.Date("Mar 28, 2019", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/mihajlo-miskovic/profil/spieler/997554" ~ as.Date("Jan 1, 2022", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/johan-romana/profil/spieler/741963" ~ as.Date("Jan 1, 2020", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/alejandro-fuenmayor/profil/spieler/309910" ~ as.Date("Mar 4, 2020", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/maynor-figueroa/profil/spieler/62240" ~ as.Date("Mar 4, 2020", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/carlos-vela/profil/spieler/35773" ~ as.Date("Mar 4, 2020", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/boniek-garcia/profil/spieler/62241" ~ as.Date("Jun 1, 2016", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/oniel-fisher/profil/spieler/357278" ~ as.Date("Jan 31, 2017", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/dru-yearwood/profil/spieler/526597" ~ as.Date("Feb 24 ,2023", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/dom-dwyer/profil/spieler/105185" ~ as.Date("Feb 14, 2012", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/diego-fagundez/profil/spieler/170100" ~ as.Date("Oct 24, 2013", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/jonathan-bond/profil/spieler/130768" ~ as.Date("Jan 1, 2010", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/robert-taylor/profil/spieler/251836" ~ as.Date("May 1, 2023", "%b %d, %Y"),
+                                     url == "https://www.transfermarkt.us/artur/profil/spieler/435488" ~ as.Date("Mar 1, 2019", "%b %d, %Y"),
+                                     TRUE ~ NA),
+         international = case_when(!is.na(green_card_date) & green_card_date <= date ~ 0,
+                                   is.na(green_card_date) & grepl("United States", citizenship) ~ 0,
+                                   TRUE ~ 1),
+         canadian = ifelse(grepl("Canada", citizenship), 1, 0)) %>%
+  # keep only transfers involving an MLS team, and only since 2018
+  filter(date >= as.Date("Jan 1, 2018", "%b %d, %Y"),
+         left %in% transfermarkt_teams | joined %in% transfermarkt_teams) %>%  
+  # Manually add the league information for transfers involving MLS teams. Set to "?" otherwise.
+  mutate(left_league = ifelse(left %in% transfermarkt_teams, "Major League Soccer", "?"),
+         left_league_country = ifelse(left %in% transfermarkt_teams, "United States", "?"),
+         left_league_level = ifelse(left %in% transfermarkt_teams, "First Tier", "?"),
+         joined_league = ifelse(joined %in% transfermarkt_teams, "Major League Soccer", "?"),
+         joined_league_country = ifelse(joined %in% transfermarkt_teams, "United States", "?"),
+         joined_league_level = ifelse(joined %in% transfermarkt_teams, "First Tier", "?")) %>% 
+  # rename MLS teams to their 3-letter code
+  mutate(left = case_when(!(left %in% transfermarkt_teams) ~ Left,
+                          left == "miami" ~ "MIA",
+                          left == "orlando" ~ "ORL",
+                          left == "new-york-city" ~ "NYC",
+                          left == "philadelphia" ~ "PHI",
+                          left == "toronto" ~ "TOR",
+                          left == "atlanta" ~ "ATL",
+                          left == "cincinnati" ~ "CIN",
+                          left == "nashville" ~ "NSH",
+                          left == "montreal" ~ "MTL",
+                          left == "d-c-united" ~ "DCU",
+                          left == "charlotte" ~ "CLT",
+                          left %in% c("columbus-crew", "columbus") ~ "CLB",
+                          left == "new-england" ~ "NER",
+                          left == "new-york" ~ "NYR",
+                          left == "chicago" ~ "CHI",
+                          left == "austin" ~ "ATX",
+                          left == "st-louis-city" ~ "STL",
+                          left == "minnesota" ~ "MIN",
+                          left == "lafc" ~ "LAF",
+                          left == "san-jose" ~ "SJE",
+                          left == "seattle" ~ "SEA",
+                          left == "houston" ~ "HOU",
+                          left == "dallas" ~ "DAL",
+                          left == "salt-lake" ~ "RSL",
+                          left == "vancouver" ~ "VAN",
+                          left == "portland" ~ "POR",
+                          left == "kansas-city" ~ "SKC",
+                          left == "colorado" ~ "COL",
+                          left == "los-angeles" ~ "LAG",
+                          TRUE ~ left),
+         joined = case_when(!(joined %in% transfermarkt_teams) ~ Joined,
+                            joined == "miami" ~ "MIA",
+                            joined == "orlando" ~ "ORL",
+                            joined == "new-york-city" ~ "NYC",
+                            joined == "philadelphia" ~ "PHI",
+                            joined == "toronto" ~ "TOR",
+                            joined == "atlanta" ~ "ATL",
+                            joined == "cincinnati" ~ "CIN",
+                            joined == "nashville" ~ "NSH",
+                            joined == "montreal" ~ "MTL",
+                            joined == "d-c-united" ~ "DCU",
+                            joined == "charlotte" ~ "CLT",
+                            joined %in% c("columbus-crew", "columbus") ~ "CLB",
+                            joined == "new-england" ~ "NER",
+                            joined == "new-york" ~ "NYR",
+                            joined == "chicago" ~ "CHI",
+                            joined == "austin" ~ "ATX",
+                            joined == "st-louis-city" ~ "STL",
+                            joined == "minnesota" ~ "MIN",
+                            joined == "lafc" ~ "LAF",
+                            joined == "san-jose" ~ "SJE",
+                            joined == "seattle" ~ "SEA",
+                            joined == "houston" ~ "HOU",
+                            joined == "dallas" ~ "DAL",
+                            joined == "salt-lake" ~ "RSL",
+                            joined == "vancouver" ~ "VAN",
+                            joined == "portland" ~ "POR",
+                            joined == "kansas-city" ~ "SKC",
+                            joined == "colorado" ~ "COL",
+                            joined == "los-angeles" ~ "LAG",
+                            TRUE ~ joined)) %>%
+  arrange(player, url, desc(date)) %>%
+  mutate(loan_end = case_when(url == "https://www.transfermarkt.us/jorge-gonzalez/profil/spieler/735795" & date == as.Date("Jan 10, 2022", "%b %d, %Y") ~ 1,
+                              TRUE ~ loan_end),
+         # find start and end for individual loans and create a unique ID
+         loan_type = case_when(lead(loan_start) == 1 & lead(url) == url & loan_end == 1 ~ 1,
+                               lag(loan_end) == 1 & lag(url) == url & loan_start == 1 ~ 1,
+                               lead(loan_start, 2) == 1 & lead(url, 2) == url & loan_end == 1 ~ 2,
+                               lag(loan_end, 2) == 1 & lag(url, 2) == url & loan_start == 1 ~ 2,
+                               loan_end == 1 & lead(url) != url ~ 0,
+                               loan_end == 1 | loan_start == 1 ~ 4,
+                               TRUE ~ NA),
+         loan_id = row_number(),
+         loan_id = case_when(is.na(loan_type) ~ NA,
+                             loan_type == 1 & loan_start == 1 ~ lag(loan_id),
+                             loan_type == 2 & loan_start == 1 ~ lag(loan_id, 3),
+                             TRUE ~ loan_id)) %>%
+  select(player, date, "left_team" = left, left_team_link, left_league, left_league_country, left_league_level,
+         "joined_team" = joined, joined_team_link, joined_league, joined_league_country, joined_league_level, 
+         birth_date, age_at_transfer, citizenship, pos, pos_detail, market_value, fee, fee_euro,
+         loan_start, loan_end, loan_id, loan_type, draft, international, canadian, green_card_date, "player_url" = url, notes)
+
+# Manually add in league information for transfer involving college teams.
+all_transfers2 = all_transfers %>% 
+  mutate(left_league = ifelse(left_team %in% college_schools$Nickname, "NCAA", left_league),
+         left_league_country = ifelse(left_team %in% college_schools$Nickname, "United States", left_league_country),
+         left_league_level = ifelse(left_team %in% college_schools$Nickname, "Amateur", left_league_level),
+         joined_league = ifelse(joined_team %in% college_schools$Nickname, "NCAA", joined_league),
+         joined_league_country = ifelse(joined_team %in% college_schools$Nickname, "United States", joined_league_country),
+         joined_league_level = ifelse(joined_team %in% college_schools$Nickname, "Amateur", joined_league_level)) 
+
+# Manually add in league information for transfers involving non-team "teams".
+all_transfers3 = all_transfers2 %>% 
+  mutate(joined_league = ifelse(joined_team %in% c("Retired", "Without Club", "Career break", "Unknown", "Ban"), "-", joined_league),
+         joined_league_country = ifelse(joined_team %in% c("Retired", "Without Club", "Career break", "Unknown", "Ban"), "-", joined_league_country),
+         joined_league_level = ifelse(joined_team %in% c("Retired", "Without Club", "Career break", "Unknown", "Ban"), "-", joined_league_level),
+         left_league = ifelse(left_team %in% c("Retired", "Without Club", "Career break", "Unknown", "Ban"), "-", left_league),
+         left_league_country = ifelse(left_team %in% c("Retired", "Without Club", "Career break", "Unknown", "Ban"), "-", left_league_country),
+         left_league_level = ifelse(left_team %in% c("Retired", "Without Club", "Career break", "Unknown", "Ban"), "-", left_league_level))
+
+# REPLACE WITH DB QUERY: Read in existing Transfer DB ########################################################################################################################
+
+existing_db <- read.csv("/Users/worser/Desktop/Transfer\ DB/TRANSFER_DB_7_29_2024.csv") 
+
+# Filter newly-scraped transfers to just those occurring after the date of last scrape in the current Transfer DB.
+just_new_transfers <- all_transfers3 %>%
+  filter(date > max(existing_db$scrape_date)) %>%
+  mutate(player = tolower(player))
+
+
+# Team Info: League, Country, Tier ################################################################################################################################################
+
+# Loop through each transfer in the data, pull league information for left team, joined team (if necessary).
+new_transfers_leagues = data.frame()
+
+# Initialize starting row. Only do this at the start of the loop run.
+row = 1
+
+# ************************************************************************************************************************************************
+for (j in row:nrow(just_new_transfers)) {
+  
+  curr_transfer = just_new_transfers[j,]
+  
+  # Check to see if any league information needs to be scraped. If not, move the next row.
+  if(curr_transfer$left_league == "?" | curr_transfer$joined_league == "?"){
+    
+    # Is the missing league information for left team or joined team?
+    left_or_joined = ifelse(curr_transfer$left_league == "?", "left", "joined")
+    
+    if(left_or_joined == "left"){
+      
+      # Left Team
+      left_team_link = curr_transfer$left_team_link
+      
+      # access the link and dynamically scrape the html
+      driver <- rsDriver(port= sample(7600)[1], browser=c("firefox"), chromever = NULL, check = FALSE)
+      remDr <- driver$client
+      remDr$navigate(left_team_link)
+      Sys.sleep(5)
+      html_content <- remDr$getPageSource()[[1]]
+      remDr$close()
+      driver$server$stop()
+      
+      # read in html
+      team_html_in = read_html(html_content)
+      
+      # get league name from html
+      left_league_name = team_html_in %>%
+        html_elements(".data-header__club") %>% 
+        html_text() %>% 
+        trimws()
+      
+      # get league country from html
+      left_league_country = team_html_in %>% 
+        html_elements(".data-header__content") %>% 
+        html_elements("a") %>% 
+        html_elements("img") %>% 
+        as.character()
+      
+      # extract the country name  
+      left_league_country = str_extract_part(left_league_country, "title=\"", before = F)
+      left_league_country = str_extract_part(left_league_country, "\" alt", before = T)
+      
+      # get league level from html.
+      left_league_level = team_html_in %>%
+        html_elements(".data-header__label") %>% 
+        html_text()  %>% 
+        trimws() 
+      
+      left_league_level = word(left_league_level[1], -2, -1)
+      
+      # handle the case where there is no league information.
+      if(length(left_league_name) == 0){
+        left_league_name = "-"
+        left_league_country = "-"
+        left_league_level = "-"
+      }
+      
+      # Add league information to the row. 
+      curr_transfer$left_league = left_league_name
+      curr_transfer$left_league_country = left_league_country
+      curr_transfer$left_league_level = left_league_level
+      
+      new_transfers_leagues = rbind(new_transfers_leagues, curr_transfer)
+      cat("Row", row, "complete\n")
+      row = row + 1
+      
+    } else {
+      
+      # Joined Team
+      joined_team_link = curr_transfer$joined_team_link
+      
+      # access the link and dynamically scrape the html
+      driver <- rsDriver(port= sample(7600)[1], browser=c("firefox"), chromever = NULL, check = FALSE)
+      remDr <- driver$client
+      remDr$navigate(joined_team_link)
+      Sys.sleep(5)
+      html_content <- remDr$getPageSource()[[1]]
+      remDr$close()
+      driver$server$stop()
+      
+      # read in html
+      team_html_in = read_html(html_content)
+      
+      # get league name from html
+      joined_league_name = team_html_in %>%
+        html_elements(".data-header__club") %>% 
+        html_text() %>% 
+        trimws()
+      
+      # get league country from html
+      joined_league_country = team_html_in %>% 
+        html_elements(".data-header__content") %>% 
+        html_elements("a") %>% 
+        html_elements("img") %>% 
+        as.character()
+      
+      # extract the country name  
+      joined_league_country = str_extract_part(joined_league_country, "title=\"", before = F)
+      joined_league_country = str_extract_part(joined_league_country, "\" alt", before = T)
+      
+      # get league level from html.
+      joined_league_level = team_html_in %>%
+        html_elements(".data-header__label") %>% 
+        html_text()  %>% 
+        trimws() 
+      
+      joined_league_level = word(joined_league_level[1], -2, -1)
+      
+      # handle the case where there is no league information.
+      if(length(joined_league_name) == 0){
+        joined_league_name = "-"
+        joined_league_country = "-"
+        joined_league_level = "-"
+      }
+      
+      # Add league information to the row. 
+      curr_transfer$joined_league = joined_league_name
+      curr_transfer$joined_league_country = joined_league_country
+      curr_transfer$joined_league_level = joined_league_level
+      
+      new_transfers_leagues = rbind(new_transfers_leagues, curr_transfer)
+      cat("Row", row, "complete\n")
+      row = row + 1
+    }
+    
+  } else {
+    
+    new_transfers_leagues = rbind(new_transfers_leagues, curr_transfer) 
+    cat("Row", row, "complete\n")
+    row = row + 1
+  }
+}  
+
+# Select and order columns.
+new_transfers_clean = new_transfers_leagues %>% 
+  select(date, player, left_team, left_league, left_league_country, left_league_level,
+         joined_team, joined_league, joined_league_country, joined_league_level,
+         birth_date, age_at_transfer, citizenship, pos, pos_detail, market_value, fee_euro, loan_start, loan_end, loan_id,
+         loan_type, draft, international, canadian, green_card_date, player_url)
+
+
+# Add player IDs ################################################################################################################################################
+new_transfers_with_player_ids = add_player_ids_to_transfer_db(new_transfers_clean)
+
+# Add league IDs, country IDs, team IDs #########################################################################################################################
+new_transfers_with_all_ids_joined = add_league_country_team_ids_to_transfer_db(new_transfers_with_player_ids) %>% 
+  # Add scrape date.
+  mutate(scrape_date = Sys.Date()) %>% 
+  mutate(date = as.Date(date),
+         scrape_date = as.Date(scrape_date))
+
+
+
+test = new_transfers_with_all_ids_joined %>% 
+  mutate(left_league = ifelse(left_team %in% college_schools$Nickname, "NCAA", left_league),
+         left_league_country = ifelse(left_team %in% college_schools$Nickname, "United States", left_league_country),
+         left_league_level = ifelse(left_team %in% college_schools$Nickname, "Amateur", left_league_level),
+         joined_league = ifelse(joined_team %in% college_schools$Nickname, "NCAA", joined_league),
+         joined_league_country = ifelse(joined_team %in% college_schools$Nickname, "United States", joined_league_country),
+         joined_league_level = ifelse(joined_team %in% college_schools$Nickname, "Amateur", joined_league_level))
+  
+
+e = Sys.time()
+e - s
