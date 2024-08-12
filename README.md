@@ -20,3 +20,11 @@
 
 ![image](https://github.com/user-attachments/assets/6881f1f0-e3d7-485e-a1d6-63fd2d1dea8e)
 
+# USPBL Analytics Hub
+
+
+**WIP**
+
+- Soon to be a hub for the 2023 United Shore Professional Baseball League Season.
+- Insight into all aspects of the game of baseball (Pitching, hitting, umpire reporting, etc.)
+- Done by 8/23/24
