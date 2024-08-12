@@ -1,0 +1,610 @@
+library(shiny)
+library(tidyverse)
+library(sportyR)
+library(ggplot2)
+library(plotly)
+library(capture)
+library(DT)
+########### read in data ###########
+master <- read.csv("Master_data.csv") #Ryan Mckray Crashed (issue is in CSV, 5/18/24 PAofInning and PitcherofPA in the pitch # 234)
+master$Date = as.Date(master$Date, format = "%m/%d/%y")
+master <- master %>%
+  mutate(Date = case_when(
+    Date == as.Date("2024-12-02") ~ as.Date("2023-12-02"),
+    Date == as.Date("2024-10-02") ~ as.Date("2023-10-02"),
+    TRUE ~ Date)) %>%
+  filter(!(Date == as.Date("2024-05-18") & Batter == "McKay, Ryan")) %>%
+  mutate(
+    TaggedPitchType = case_when(
+      Pitcher == 'Powers, Nick' & TaggedPitchType == 'Slider' ~ 'Curveball',
+      Pitcher == 'Rush, Wyatt' & TaggedPitchType == 'Slider' ~ 'Cutter',
+      Pitcher == 'Dzierwa, Joseph' & TaggedPitchType == 'Curveball' ~ 'Slider',
+      Pitcher == 'Cook, Harrison' & TaggedPitchType == 'Fastball' ~ 'Sinker',
+      Pitcher == 'Szczepaniak, Ryan' & TaggedPitchType == 'Slider' ~ 'Curveball',
+      Pitcher == 'Farquhar, Tate' & TaggedPitchType == 'Curveball' ~ 'Slider',
+      Pitcher == 'Hopman, Zach' & TaggedPitchType == 'Sinker' ~ 'Fastball',
+      Pitcher == 'Chapman, Max' & TaggedPitchType == 'Curveball' ~ 'Slider',
+      Pitcher == 'Rush, Wyatt' & TaggedPitchType == 'Fastball' ~ 'Sinker',
+      Pitcher == 'Rush, Wyatt' & TaggedPitchType == 'Slider' ~ 'Cutter',
+      Pitcher == 'Carson, Andrew' & TaggedPitchType == 'Curveball' ~ 'Slider',
+      Pitcher == 'Pianto, Dominic' & TaggedPitchType == 'Fastball' ~ 'Sinker',
+      Pitcher == 'Mishoulam, Aaron' & TaggedPitchType == 'Fastball' ~ 'Sinker',
+      Pitcher == 'Kaminski, Dylan' & TaggedPitchType == 'Changeup' ~ 'Splitter',
+      TRUE ~ TaggedPitchType),
+    # Setting up season dates (random dates in middle of season are practice scrimmages)
+    Season = case_when(
+      (Date < '2023-02-17' | Date == '2023-02-28' | Date == '2023-03-01' | Date == '2023-03-23' | Date == '2023-04-27') ~ "2023 - SCRIMMAGES",
+      (Date >= '2023-02-17' & Date <= '2023-08-01') ~ "2023 - SEASON",
+      (Date >= '2023-09-10' & Date <= '2024-02-15'|Date == '2023-12-02'| Date == '2023-10-02') ~ "2024 - SCRIMMAGES",
+      (Date >= '2024-02-16' & Date <= '2024-08-01') ~ '2024 - SEASON',
+      (Date >= '2024-09-07' & Date <= '2025-02-13') ~ "2025 - SCRIMMAGES",
+      (Date >= '2025-02-14' & Date <= '2025-08-01') ~ '2025 - SEASON'),
+    Year = case_when(
+      (Date >= '2022-09-01' & Date < '2023-08-01') ~ '2023',
+      (Date >= '2023-09-01' & Date < '2024-08-01') ~ '2024',
+      (Date >= '2024-09-01' & Date < '2025-08-01') ~ '2025',
+    ))
+
+
+###################### change pitch types ######################
+
+batter_report <- master
+batter_report$TaggedPitchType = case_when(
+  batter_report$TaggedPitchType == "FourSeamFastBall" ~ "Fastball",
+  batter_report$TaggedPitchType == "ChangeUp" ~ "Change Up",
+  batter_report$TaggedPitchType == "Slider" ~ "Slider",
+  batter_report$TaggedPitchType == "Sinker" ~ "Sinker",
+  batter_report$TaggedPitchType == "Curveball" ~ "Curveball",
+  batter_report$TaggedPitchType == "Fastball" ~ "Fastball",
+  batter_report$TaggedPitchType == "Cutter" ~ "Cutter",
+  batter_report$TaggedPitchType == "TwoSeamFastBall" ~ "Fastball",
+  batter_report$TaggedPitchType == "KnuckleBall" ~ "Knuckle Ball",
+  batter_report$TaggedPitchType == "Splitter" ~ "Splitter"
+  
+)
+
+
+
+
+
+
+hit_model <- readRDS("hit_model.rds")
+
+
+###################### start of UI ######################
+ui <- fluidPage(
+  mainPanel(
+    id = "Batter_Report",
+    fluidRow(
+      column(3,
+             selectInput(inputId = "Batter_Select_Input",
+                         label = "Select Batter",
+                         choices = ""
+             )
+      ),
+      column(3,
+             selectInput(inputId = "Season_Select_Input",
+                         label = "Select Season",
+                         choices = c('2025 - SCRIMMAGES', '2024 - SEASON', '2024 - SCRIMMAGES', '2023 - SEASON', '2023 - SCRIMMAGES')
+             )
+      ),
+      column(3, 
+             selectInput(inputId = "Game_Select_Input",
+                         label = "Select Game",
+                         choices = "")
+      ),
+      column(
+        3,
+        p("", style = "margin-bottom: 25px;"),
+        capture_pdf(
+          selector = "#Batter_Report",
+          filename = paste("Batter_Report"),
+          loading = loading(),
+          margins = 10,
+          icon("download"), " Download"),
+      ),
+    ),
+    
+    fluidRow(
+      column(5,
+             h3("Season Total Table"),
+             tableOutput("Season_table")
+      ),
+    ),
+    
+    fluidRow(
+      column(5,
+             h3("Game Table"),  # Add this line to include the title
+             tableOutput("Game_table")
+      ),
+    ),
+    
+    
+    fluidRow(
+      column(5,
+             tableOutput("xwOBA_table"),
+             htmlOutput("xwOBA_key")
+             
+      ),
+      
+      column(5,
+             tableOutput("SD_table"),
+             htmlOutput("SD_key")
+             
+      ),
+    ),
+    
+    
+    fluidRow(
+      column(7,
+             plotOutput("plate_graph", width = "900px", height = "550px")
+      )
+    ),
+    
+    fluidRow(
+      column(5,
+             plotOutput("spray_chart", width = "475px", height = "400px")
+      ),
+      fluidRow(
+        column(5,
+               plotOutput("heat_map", width = "475px", height = "400px")
+        )
+      )
+    )
+  )
+)
+
+###################### start of server ###################### 
+server <- function(input, output, session) {
+  batter_report <- master
+  observeEvent(input$Season_Select_Input,{
+    updateSelectInput(session,
+                      inputId = "Batter_Select_Input",
+                      label = "Select Batter",
+                      choices = sort(as.character(unique(batter_report$Batter[input$Season_Select_Input == batter_report$Season & batter_report$BatterTeam == "MIC_SPA" & batter_report$Batter != ""])))
+    )
+    
+    updateSelectInput(session,
+                      inputId = "Game_Select_Input",
+                      label = "Select Game",
+                      choices = rev(sort(unique(batter_report$Date[input$Season_Select_Input == batter_report$Season & batter_report$Batter == input$Batter_Select_Input])))
+    )
+    
+    
+    
+  })
+  
+  observeEvent(input$Batter_Select_Input,{
+    updateSelectInput(session,
+                      inputId = "Game_Select_Input",
+                      label = "Select Game",
+                      choices = rev(sort(unique(batter_report$Date[input$Season_Select_Input == batter_report$Season & batter_report$Batter == input$Batter_Select_Input]))))
+  })
+  
+  ###################### start of mapping & SD ######################
+  observeEvent(c(input$Game_Select_Input,input$Batter_Select_Input),{
+    
+    batter_report <- batter_report %>% 
+      mutate(Count = paste0(Balls,"-",Strikes),
+             Swing = (ifelse(PitchCall == "FoulBall" | PitchCall == "StrikeSwinging" | PitchCall == "InPlay" | PitchCall == "FoulBallNotFieldable" | PitchCall == "FoulBallFieldable", "Swing", "Take")),
+             Zones = ifelse(PlateLocHeight >= 1.745 & PlateLocHeight <= 3.01 &
+                              PlateLocSide >= (-0.83083)/2 & PlateLocSide <= (0.83083)/2,
+                            "Heart", ifelse(
+                              #bottom#
+                              (PlateLocHeight >= 1.3775 & PlateLocHeight <= 1.745 & PlateLocSide >= -0.83083 & PlateLocSide <= 0.83083) |
+                                # top 
+                                (PlateLocHeight >= 3.01 & PlateLocHeight <= 3.3775 & PlateLocSide >= -0.83083 & PlateLocSide <= 0.83083) |
+                                # left
+                                (PlateLocHeight >= 1.3775 & PlateLocHeight <= 3.3775 & PlateLocSide >= -0.83083 & PlateLocSide <= (-0.83083)/2) |
+                                # right
+                                (PlateLocHeight >= 1.3775 & PlateLocHeight <= 3.3775 & PlateLocSide >= (-0.83083)/2 & PlateLocSide <= 0.83083),
+                              "Zone", ifelse(
+                                #bottom
+                                (PlateLocHeight >= 1.255 & PlateLocHeight <= 1.3775 & PlateLocSide >= -0.9975 & PlateLocSide <= 0.9975) |
+                                  # top
+                                  (PlateLocHeight >= 3.3775 & PlateLocHeight <= 3.5 & PlateLocSide >= -0.9975 & PlateLocSide <= 0.9975) |
+                                  # left
+                                  (PlateLocHeight >= 1.255 & PlateLocHeight <= 3.5 & PlateLocSide >= -0.9975 & PlateLocSide <= -0.83083) |
+                                  # right
+                                  (PlateLocHeight >= 1.255 & PlateLocHeight <= 3.5 & PlateLocSide >= 0.83083 & PlateLocSide <= 0.9975),
+                                "Shadow", ifelse(
+                                  #bottom
+                                  (PlateLocHeight >= .785 & PlateLocHeight <= 1.255 & PlateLocSide >= -1.4418 & PlateLocSide <= 1.4418) |
+                                    # top
+                                    (PlateLocHeight >= 3.5 & PlateLocHeight <= 3.8675 & PlateLocSide >= -1.4418 & PlateLocSide <= 1.4418) |
+                                    # left
+                                    (PlateLocHeight >= .785 & PlateLocHeight <= 3.8675 & PlateLocSide >= -1.4418 & PlateLocSide <= -0.8305) |
+                                    # right
+                                    (PlateLocHeight >= .785 & PlateLocHeight <= 3.8675 & PlateLocSide >= 0.8305 & PlateLocSide <= 1.4418),
+                                  "Chase", "Waste"))))) %>% 
+      mutate(SD_Score = ifelse((Swing == "Swing" & Zones == "Waste") | (Count == "3-2" & Swing == "Take" & Zones == "Heart") | (Swing == "Take" & Count == "2-2" & Zones == "Heart") | (Swing == "Take" & Zones == "Heart" & Count == "1-1") | (Swing == "Take" & Zones == "Heart" & Count == "1-2") | (Swing == "Take" & Zones == "Heart" & Count == "0-2"),-5, 
+                               ifelse(Swing == "Take" & ((Count == "3-2" & Zones == "Zone") | (Zones == "Heart" & Count == "3-1") | (Zones == "Zone" & Count == "2-2") | (Zones == "Zone" & Count == "1-2") | (Zones == "Zone" & Count == "0-2") | Zones == "Heart" & Count == "0-0"),-4.5,
+                                      ifelse((Swing == "Swing" & Zones == "Chase" & Count == "3-0") | (Swing == "Take" & ((Zones == "Zone" & Count == "0-0") | (Zones == "Heart" & Count == "0-1") | (Zones == "Heart" & Count == "1-0") | (Zones == "Zone" & Count == "1-1") | (Zones == "Heart" & Count == "2-1") | (Zones == "Zone" & Count == "3-1"))),-4,
+                                             ifelse(Swing == "Take" & ((Zones == "Zone" & Count == "1-0") | (Zones == "Zone" & Count == "0-1") | (Zones == "Heart" & Count == "2-0") | (Zones == "Zone" & Count == "2-1")), -3.5, 
+                                                    ifelse(Swing == "Take" & (Zones == "Zone" & Count == "2-0") | (Swing == "Swing" & (Zones == "Chase" & Count == "3-1") | (Zones == "Shadow" & Count == "3-0") | (Zones == "Chase" & Count == "2-0")), -3,
+                                                           ifelse(Swing == "Swing" & (Zones == "Chase" & Count == "3-2") | (Zones == "Chase" & Count == "1-0"),-2.5,
+                                                                  ifelse(Swing == "Swing" & ((Zones == "Chase" & Count == "0-0") | (Zones == "Chase" & Count == "0-1") | (Zones == "Zone" & Count == "2-0") | (Zones == "Chase" & Count == "1-1") | (Zones == "Chase" & Count == "2-2")),-2,
+                                                                         ifelse(Swing == "Swing" & Zones == "Chase" & Count == "2-1",-1.5,
+                                                                                ifelse(Swing == "Swing" & ((Zones == "Chase" & Count == "0-2") | (Zones == "Chase" & Count == "1-2")),-1,
+                                                                                       ifelse(Swing == "Take" & (Zones == "Shadow" & Count == "0-2") | (Zones == "Shadow" & Count == "1-2") | (Zones == "Shadow" & Count == "2-2"),-0.5,
+                                                                                              ifelse((Swing == "Swing" & (Zones == "Shadow" & Count == "0-0")|(Zones == "Shadow" & Count == "0-1") | (Zones == "Shadow" & Count == "1-0") | (Zones == "Zone" & Count == "3-0")) | (Swing == "Take" & ((Zones == "Shadow" & Count == "1-1") | (Zones == "Zone" & Count == "3-0") | (Zones == "Heart" & Count == "3-0") | (Zones == "Shadow" & Count == "3-1") | (Zones == "Shadow" & Count == "3-2") )),0, 
+                                                                                                     ifelse((Swing == "Swing" & ((Zones == "Shadow" & Count == "3-2") | (Zones == "Heart" & Count == "3-0") | (Zones == "Shadow" & Count == "1-1"))) | (Swing == "Take" & Zones == "Shadow" & Count == "2-1"),0.5,
+                                                                                                            ifelse((Swing == "Swing" & Zones == "Shadow" & Count == "3-1" | (Swing == "Take" & ((Zones == "Chase" & Count == "3-1") | (Zones == "Waste" & Count == "3-1") | (Zones == "Waste" & Count == "3-0") | (Zones == "Waste" & Count == "2-1") | (Zones == "Chase" & Count == "2-0") | (Zones == "Shadow" & Count == "2-0") | (Zones == "Waste" & Count == "2-0") | (Zones == "Waste" & Count == "1-1") | (Zones == "Chase" & Count == "0-1") | (Zones == "Chase" & Count == "1-0") | (Zones == "Shadow" & Count == "1-0") | (Zones == "Waste" & Count == "1-0") | (Zones == "Chase" & Count == "0-1") | (Zones == "Shadow" & Count == "0-1") | (Zones == "Chase" & Count == "2-0") | (Zones == "Waste" & Count == "0-1") | (Zones == "Chase" & Count == "0-0") | (Zones == "Shadow" & Count == "0-0")  | (Zones == "Waste" & Count == "0-0")))),1,
+                                                                                                                   ifelse((Swing == "Swing" & ((Zones == "Shadow" & Count == "0-2") | (Zones == "Shadow" & Count == "1-0") | (Zones == "Shadow" & Count == "1-2") | (Zones == "Shadow" & Count == "2-1") | (Zones == "Shadow" & Count == "2-2"))) | (Swing == "Take" & (Zones == "Chase" & Count == "0-2") | (Zones == "Waste" & Count == "0-2") | (Zones == "Waste" & Count == "1-2") | (Zones == "Chase" & Count == "1-2") | (Zones == "Chase" & Count == "2-1") | (Zones == "Waste" & Count == "2-2") | (Zones == "Chase" & Count == "0-1")  | (Zones == "Waste" & Count == "3-2")),1.5,
+                                                                                                                          ifelse((Swing == "Take" & ((Zones == "Chase" & Count == "3-2") | (Zones == "Chase" & Count == "2-2") | (Zones == "Chase" & Count == "1-1"))),2,
+                                                                                                                                 ifelse((Swing == "Swing" & Zones == "Shadow" & Count == "2-0") | (Swing == "Take" & Zones == "Chase" & Count == "3-0"),2.5,
+                                                                                                                                        ifelse((Swing == "Swing" & Zones == "Zone" & Count == "0-1") | (Swing == "Take" & Zones == "Shadow" & Count == "3-0"),3.5,
+                                                                                                                                               ifelse(Swing == "Swing" & ((Zones == "Zone" & Count == "0-0") | (Zones == "Zone" & Count == "1-0") | (Zones == "Zone" & Count == "1-1")),4,
+                                                                                                                                                      ifelse(Swing == "Swing" & ((Zones == "Zone" & Count == "0-2") | (Zones == "Zone" & Count == "1-2") | (Zones == "Zone" & Count == "2-0") | (Zones == "Zone" & Count == "2-1") | (Zones == "Zone" & Count == "2-2") | (Zones == "Zone" & Count == "3-2")),4.5,
+                                                                                                                                                             ifelse(Swing == "Swing" & ((Zones == "Heart" & Count == "3-2") | (Zones == "Heart" & Count == "3-1") | (Zones == "Zone" & Count == "3-1") | (Zones == "Heart" & Count == "2-2") | (Zones == "Heart" & Count == "2-1") | (Zones == "Heart" & Count == "2-0") | (Zones == "Heart" & Count == "1-2") | (Zones == "Heart" & Count == "1-1") | (Zones == "Heart" & Count == "1-0") | (Zones == "Heart" & Count == "0-2") | (Zones == "Heart" & Count == "0-1") | (Zones == "Heart" & Count == "0-0")),5,NA
+                                                                                                                                                             )))))))))))))))))))))
+    
+    batter_report <- batter_report %>% 
+      filter(Season == input$Season_Select_Input & Batter == input$Batter_Select_Input)
+    
+    hit_model_data <- batter_report %>% 
+      filter(PitchCall == "InPlay") %>% 
+      select(PlayResult, ExitSpeed, Angle, Distance, Bearing, Date) %>% 
+      mutate(X = sin(Bearing * pi / 180) * Distance,
+             Y = cos(Bearing * pi / 180) * Distance)
+    
+    
+    hit_pred <- predict(hit_model, hit_model_data, type = "prob")
+    
+    ####################### season stats ######################
+    season_stats <- batter_report %>% 
+      summarize(Season = input$Season_Select_Input,
+                #BA = format(round(length(PlayResult[PlayResult == "Single" | PlayResult == "Double" | PlayResult == "Triple" | PlayResult == "HomeRun"]) / (length(PlayResult[PlayResult == "Single" | PlayResult == "Double" | PlayResult == "Triple" | PlayResult == "HomeRun" | PlayResult == "Out"]) + length(KorBB[KorBB == "Strikeout"])),3),3),
+                'SD+' =  as.integer(sum(SD_Score, na.rm = TRUE) / n() * 100 / .93),
+                #'K/BB' = format(round(length(KorBB[KorBB == "Walk"]) / length(KorBB[KorBB == "Strikeout"]),2),2),
+                #wOBA = format(round((length(KorBB[KorBB == "Walk"])*.69 + length(PitchCall[PitchCall == "HitByPitch"])*.72 + length(PlayResult[PlayResult == "Single"])*.89 + length(PlayResult[PlayResult == "Double"])*1.27 + length(PlayResult[PlayResult == "Triple"])*1.62 + length(PlayResult[PlayResult == "HomeRun"])*2.1)/(length(PlayResult[PlayResult == "Single" | PlayResult == "Double" | PlayResult == "Triple" | PlayResult == "HomeRun" | PlayResult == "Out" | PlayResult == "FieldersChoice"]) + length(KorBB[KorBB == "Strikeout" | KorBB == "Walk"]) + length(PitchCall[PitchCall == "HitByPitch"])), 3), 3),
+                #xwOBA = as.numeric(format(round((length(KorBB[KorBB == "Walk"])*.69 + length(PitchCall[PitchCall == "HitByPitch"])*.72 + sum(hit_pred$Single)*.89 + sum(hit_pred$Double)*1.27 + sum(hit_pred$Triple)*1.62 + sum(hit_pred$HomeRun)*2.1)/(length(PlayResult[PlayResult == "Single" | PlayResult == "Double" | PlayResult == "Triple" | PlayResult == "HomeRun" | PlayResult == "Out" | PlayResult == "FieldersChoice"]) + length(KorBB[KorBB == "Strikeout" | KorBB == "Walk"]) + length(PitchCall[PitchCall == "HitByPitch"])), 3), 3)),
+                #'xwRC/PA' = format(round((xwOBA - .378) / 1.25 + .16 ,3),3),
+                #"Chase%" = paste0(as.integer(length(Swing[Swing == "Swing" & (PlateLocSide > 0.9975 | PlateLocSide  < -0.9975 | PlateLocHeight < 1.255 | PlateLocHeight > 3.5)]) / length(Swing[PlateLocSide > 0.9975 | PlateLocSide  < 0.9975 | PlateLocHeight < 1.255 | PlateLocHeight > 3.5]) * 100),"%"),
+                #"Whiff%" = paste0(as.integer(length(PitchCall[PitchCall == "StrikeSwinging"]) / length(Swing[Swing == "Swing"]) * 100),"%"),
+                #"1P-Str Swing%" = paste0(as.integer(length(PitchofPA[PitchofPA == 1 & Swing == "Swing" & (Zones == "Heart" | Zones == "Zone")]) / length(PitchofPA[PitchofPA == 1 & (Zones == "Heart" | Zones == "Zone")]) * 100),"%"),
+                #"2-Str Chase%" = paste0(as.integer(length(Swing[Swing == "Swing" & Strikes == 2 & (Zones == "Chase" | Zones == "Waste")]) / length(Strikes[Strikes == 2 & (Zones == "Waste" | Zones == "Chase")]) * 100),"%"),
+      )
+    
+    
+    
+    
+    ###################### heat map ######################
+    
+    heat_map_data <- batter_report %>% 
+      mutate(HardHit = ifelse(ExitSpeed >= 90,1,0)) %>% 
+      filter(PitchCall == "InPlay")
+    
+    heat_map <- ggplot(heat_map_data, aes(x = -PlateLocSide, y = PlateLocHeight, fill = HardHit)) + 
+      stat_density_2d(aes(fill = ..density..), geom = "raster", contour = FALSE) +
+      scale_fill_gradient(low = "blue", high = "red") +
+      geom_segment(aes(x = -0.7083, y = 0.3, xend = 0, yend = 0), size = 1, color = "black") +
+      geom_segment(aes(x = 0, y = 0, xend = 0.7083, yend = 0.3), size = 1, color = "black") +
+      geom_segment(aes(x = -0.7083, y = 0.3, xend = -0.7083, yend = 0.5), size = 1, color = "black") + 
+      geom_segment(aes(x = -0.7083, y = 0.5, xend = 0.7083, yend = 0.5), size = 1, color = "black") +
+      geom_segment(aes(x = 0.7083, y = 0.3, xend = 0.7083, yend = 0.5), size = 1, color = "black") +
+      geom_segment(aes(x = -0.9975,xend = 0.9975,y = 1.255,yend = 1.255),size = .5,color = "black", linetype = 'dashed') + 
+      geom_segment(aes(x = -0.9975,xend = 0.9975,y = 3.5,yend = 3.5), size = .5,color = "black", linetype = 'dashed') + 
+      geom_segment(aes(x = 0.9975,xend = 0.9975,y = 1.255,yend = 3.5), size = .5,color = "black", linetype = 'dashed') + 
+      geom_segment(aes(x = -0.9975,xend = -0.9975,y = 1.255,yend = 3.5), size = .5,color = "black", linetype = 'dashed') + 
+      geom_segment(aes(x = -0.83083, xend = 0.83083, y = 1.3775, yend = 1.3775), size = .5, color = "black") +
+      geom_segment(aes(x = -0.83083, xend = 0.83083, y = 3.3775, yend = 3.3775), size = .5, color = "black") +
+      geom_segment(aes(x = -0.83083, xend = -0.83083, y = 1.3775, yend = 3.3775), size = .5, color = "black") +
+      geom_segment(aes(x = 0.83083, xend = 0.83083, y = 1.3775, yend = 3.3775), size = .5, color = "black") +
+      theme_bw() + xlim(-3, 3) + ylim(0, 5) + 
+      labs(x = "", y = "", fill = "EV 90+%", title = paste("BIP", input$Season_Select_Input)) + 
+      theme(
+        legend.text = element_text(size = 11),  
+        legend.title = element_text(size = 12),  
+        axis.text = element_text(size = 11),    
+        axis.title = element_text(size = 11)     
+      )
+    
+    batter_report <- batter_report %>% 
+      filter(Date == input$Game_Select_Input)
+    
+    hit_model_data <- hit_model_data %>% 
+      filter(Date == input$Game_Select_Input)
+    
+    ####################### at bats loop ######################  
+    
+    atbats <- numeric(length(batter_report$PitchNo))
+    atbat <- 0
+    for (i in seq_along(batter_report$PitchNo)) {
+      if (batter_report$PitchofPA[i] == 1) {
+        atbat <- atbat + 1
+      }
+      atbats[i] <- atbat
+    }
+    batter_report$AtBat <- atbats
+    
+    ###################### result ######################
+    
+    batter_report <- batter_report %>% 
+      mutate(
+        hit_type = case_when(
+          TaggedHitType == "LineDrive" ~ "Line Drive",
+          TaggedHitType == "FlyBall" ~ "Fly Ball",
+          TaggedHitType == "GroundBall" ~ "Ground Ball",
+          TaggedHitType == "Popup" ~ "Pop Up",
+          TaggedHitType == "Undefined" ~ "-",
+          TaggedHitType == "Bunt" ~ "Bunt",
+          TaggedHitType == "Sacrifice" ~ "Sacrifice"
+        ),
+        
+        pitch_result = case_when(
+          PitchCall == "BallCalled" ~ "Ball",
+          PitchCall == "BallinDirt" ~ "Ball",
+          PitchCall == "StrikeCalled" ~ "Called Strike",
+          PitchCall == "StrikeSwinging" ~ "Swinging Strike",
+          PitchCall == "FoulBall" ~ "Foul Ball",
+          PitchCall == "FoulBallNotFieldable" ~ "Foul Ball",
+          PitchCall == "HitByPitch" ~ "HBP",
+          PitchCall == "InPlay" ~ "In Play",
+          PitchCall == "FoulBallFieldable" ~ "Foul Ball",
+        ),
+        
+        play_result = case_when(
+          PitchCall == "BallCalled" & KorBB == "Walk" ~ "Walk",
+          PitchCall == "BallCalled" ~ "Ball",
+          PitchCall == "BallinDirt" ~ "Ball",
+          PitchCall == "StrikeCalled" & KorBB == "Strikeout" ~ "Looking Strikeout",
+          PitchCall == "StrikeSwinging" & KorBB == "Strikeout" ~ "Swinging Strikeout",
+          PitchCall == "StrikeCalled" ~ "Looking Strike",
+          PitchCall == "StrikeSwinging" ~ "Strike Swinging",
+          PitchCall == "FoulBall" ~ "Foul Ball",
+          PitchCall == "FoulBallNotFieldable" ~ "Foul Ball",
+          PitchCall == "FoulBallFieldable" ~ "Foul Ball",
+          PitchCall == "HitByPitch" ~ "HBP",
+          PitchCall == "InPlay" ~ PlayResult
+          
+        ),
+        
+      )
+    
+    
+    
+    
+    batter_report <- batter_report %>% 
+      group_by(AtBat) %>% 
+      mutate(ab = paste0("PA:", AtBat, " | ", last(play_result), " | EV: ",as.integer(last(ExitSpeed)), " | LA: ",as.integer(last(Angle)))) %>% 
+      ungroup()
+    
+    ##################################### fix this bullshit im losing my god damn mind ############################################### 
+    
+    
+    
+    
+    
+    
+    hit_model_data <- batter_report %>%
+      filter(PitchCall == "InPlay") %>%
+      select(PlayResult, ExitSpeed, Angle, Distance, Bearing, Date) %>%
+      mutate(X = sin(Bearing * pi / 180) * Distance,
+             Y = cos(Bearing * pi / 180) * Distance)
+    
+    hit_pred <- predict(hit_model, hit_model_data, type = "prob")
+    
+    batter_report <- batter_report %>%
+      mutate(
+        xwOBA = ifelse(PitchCall == "InPlay",
+                       (hit_pred$Single * 0.89 +
+                          hit_pred$Double * 1.27 +
+                          hit_pred$Triple * 1.62 +
+                          hit_pred$HomeRun * 2.10),
+                       NA_real_)
+      )
+    
+    xwOBA_table_data <- batter_report %>%
+      group_by(AtBat) %>%
+      summarize(
+        PA = as.integer(last(AtBat)), 
+        Pitcher = last(Pitcher),
+        PitcherThrows = last(PitcherThrows),
+        Inning = last(Inning),
+        Outs = last(Outs),
+        Result = last(play_result),
+        xwOBA = last(xwOBA),
+        SD_plus = as.integer(mean(SD_Score, na.rm = TRUE) * 100 / .93)
+      ) %>%
+      ungroup() %>%
+      select(-AtBat) %>% 
+      separate(Pitcher, into = c("Last", "First"), sep = ", ") %>%
+      unite(Pitcher , First, Last, sep = " ") %>% 
+      mutate(PitcherThrows  = ifelse(PitcherThrows  == "Right", "RHP", "LHP")) %>%
+      rename(Hand = PitcherThrows, "SD+" = SD_plus)
+    
+    
+    
+    ####################################################################################
+    
+    
+    ###################### plate graph ###################### 
+    
+    
+    shape_values <- c("In Play" = 8, "Called Strike" = 1, "Swinging Strike" = 19, "Foul Ball" = 13, "Ball" = 2, "HBP" = 3)
+    color_values <- c("Fastball" = "darkgreen", "Slider" = "red", "ChangeUp" = "purple", "Curveball" = "orange", "Cutter" = "green", "Sinker" = "blue", "Splitter" = "lightblue", "KnuckleBall" = "black")
+    
+    
+    plate_graph <- ggplot(batter_report, mapping = aes(x = -PlateLocSide, y = PlateLocHeight)) + geom_point(aes(color = TaggedPitchType, shape = pitch_result), size = 2.75, alpha = 3) +
+      geom_text(aes(label = PitchofPA), vjust = -1, size = 4) +
+      #Plate
+      geom_segment(aes(x = -0.7083,y = 0.5,xend = 0.7083,yend = 0.5),size = 1,color = "black") +
+      geom_segment(aes(x = -0.7083,y = 0.3,xend = 0,yend = 0),size = 1,color = "black") +
+      geom_segment(aes(x = 0.7083,y = 0.3,xend = 0,yend = 0),size = 1,color = "black") +
+      geom_segment(aes(x = 0.7083,y = 0.3,xend = 0.7083,yend = 0.5),size = 1,color = "black") +
+      geom_segment(aes(x = -0.7083,y = 0.3,xend = -0.7083,yend = 0.5),size = 1,color = "black") +
+      #Zone
+      geom_segment(aes(x = -0.9975,xend = 0.9975,y = 1.255,yend = 1.255),size = .5,color = "black", linetype = 'dashed') + 
+      geom_segment(aes(x = -0.9975,xend = 0.9975,y = 3.5,yend = 3.5), size = .5,color = "black", linetype = 'dashed') + 
+      geom_segment(aes(x = 0.9975,xend = 0.9975,y = 1.255,yend = 3.5), size = .5,color = "black", linetype = 'dashed') + 
+      geom_segment(aes(x = -0.9975,xend = -0.9975,y = 1.255,yend = 3.5), size = .5,color = "black", linetype = 'dashed') + 
+      geom_segment(aes(x = -0.83083, xend = 0.83083, y = 1.3775, yend = 1.3775), size = .5, color = "black") +
+      geom_segment(aes(x = -0.83083, xend = 0.83083, y = 3.3775, yend = 3.3775), size = .5, color = "black") +
+      geom_segment(aes(x = -0.83083, xend = -0.83083, y = 1.3775, yend = 3.3775), size = .5, color = "black") +
+      geom_segment(aes(x = 0.83083, xend = 0.83083, y = 1.3775, yend = 3.3775), size = .5, color = "black") +
+      #SD Zones
+      geom_rect(aes(xmin = -3, xmax = 3, ymin = 0, ymax = 5, fill = "Waste"), alpha = .02, size = 1) +
+      geom_rect(aes(xmin = -1.4418, xmax = 1.4418, ymin = .785, ymax = 3.8675, fill = "Chase"), alpha = .02, size = 1) +
+      geom_rect(aes(xmin = -0.9975, xmax = 0.9975, ymin = 1.255, ymax = 3.5, fill = "Shadow"), alpha = .02, size = 1) +
+      geom_rect(aes(xmin = -0.83083, xmax = 0.83083, ymin = 1.3775, ymax = 3.3775, fill = "Zone"), alpha = .02, size = 1) +
+      geom_rect(aes(xmin = -0.83083/2, xmax = 0.83083/2, ymin = 1.745, ymax = 3.01, fill = "Heart"), alpha = .02, size = 1) + 
+      
+      scale_fill_manual(name = "Legend", values = c("Waste" = "deepskyblue3", "Chase" = "yellow", "Shadow" = "orange", "Zone" = "red", "Heart" = "darkred"),
+                        breaks = c("Waste", "Chase", "Shadow", "Zone", 'Heart')) +
+      theme_bw() + xlim(-3, 3) + ylim(0, 5) + facet_wrap(~ ab, ncol = 3, scales = "free") + labs(x = "", y = "", color = "Pitch", shape = "Result") + 
+      scale_shape_manual(values = shape_values) + scale_color_manual(values = color_values) +
+      theme(aspect.ratio = 1,
+            legend.text = element_text(size = 12), 
+            legend.title = element_text(size = 14), 
+            strip.text = element_text(size = 12),    
+            axis.text = element_text(size = 12),     
+            axis.title = element_text(size = 14)) 
+    
+    
+    
+    
+    
+    ###################### start of totals table ###################### 
+    
+    total_bases <- function(play_result) {
+      case_when(
+        play_result == "Single" ~ 1,
+        play_result == "Double" ~ 2,
+        play_result == "Triple" ~ 3,
+        play_result == "HomeRun" ~ 4,
+        TRUE ~ 0
+      )
+    }
+    
+    
+    batter_report <- batter_report %>%
+      mutate(TotalBases = total_bases(PlayResult))
+    
+    ###################### game total table ######################
+    
+    total_table <- batter_report %>% 
+      summarise(PA = as.integer(AtBat[length(AtBat)]),
+                H = length(PlayResult[PlayResult == "Single" | PlayResult == "Double" | PlayResult == "Triple" | PlayResult == "HomeRun"]),
+                BB = length(KorBB[KorBB == "Walk"]),
+                HBP = length(PitchCall[PitchCall == "HitByPitch"]),
+                SO = length(KorBB[KorBB == "Strikeout"]),
+                RBI = sum(RunsScored),
+                TBs = as.integer(sum(TotalBases)),
+                SD = sum(SD_Score) / n(),
+                'SD+' = as.integer(mean(SD_Score, na.rm = TRUE) * 100 / .93),
+                xwOBA = format(round((sum(BB)*.69 + sum(HBP)*.72 + sum(hit_pred$Single)*.89 + sum(hit_pred$Double)*1.27 + sum(hit_pred$Triple)*1.62 + sum(hit_pred$HomeRun)*2.1)/PA, 3), 3)
+      )
+    
+    
+    ###################### spray chart ###################### 
+    
+    spray_chart <- geom_baseball(league = "MLB") +
+      geom_point(mapping = aes(x = sin(batter_report$Bearing * pi / 180) * batter_report$Distance, 
+                               y = cos(batter_report$Bearing * pi / 180) * batter_report$Distance, color = as.factor(batter_report$AtBat)), size = 3) + 
+      labs(color = "PA")
+    
+    
+    ###################### SD table ###################### 
+    SD_table <- batter_report %>% 
+      group_by(Zones) %>% 
+      summarise(Take = length(Swing[Swing == "Take"]),
+                Swing = length(Swing[Swing == "Swing"]),
+                Miss = length(Swing[PitchCall == "StrikeSwinging"]),
+                SD = sum(SD_Score) / n(),
+                EV = as.integer(mean(ExitSpeed, na.rm = TRUE)),
+                LA = as.integer((mean(Angle, na.rm = TRUE))))
+    
+    
+    
+    ###################### outputs ###################### 
+    
+    output$plate_graph <- renderPlot({
+      plate_graph
+    })
+    
+    output$Game_table <- renderTable({
+      total_table
+    })
+    
+    output$spray_chart <- renderPlot({
+      spray_chart
+    })
+    
+    output$SD_table <- renderTable({
+      SD_table
+    })
+    
+    output$SD_key <- renderUI({
+      tags$div(
+        style = "border: 1px solid black; padding: 10px; display: inline-block; background-color: #f9f9f9; margin-bottom: 10px;",
+        HTML(
+          "<table style='width: 100%; border-collapse: collapse;'>
+        <thead>
+          <tr>
+            <th style='border: 1px solid black; padding: 5px;'><b>Level</b></th>
+            <th style='border: 1px solid black; padding: 5px;'><b>National</b></th>
+            <th style='border: 1px solid black; padding: 5px;'><b>Team</b></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style='background-color: #008000;'>
+            <td style='border: 1px solid black; padding: 5px;'><b>Elite</b></td>
+            <td style='border: 1px solid black; padding: 5px;'><b>1.9</b></td>
+            <td style='border: 1px solid black; padding: 5px;'><b>1.4</b></td>
+          </tr>
+          <tr style='background-color: #90EE90;'>
+            <td style='border: 1px solid black; padding: 5px;'><b>Good</b></td>
+            <td style='border: 1px solid black; padding: 5px;'><b>1.0</b></td>
+            <td style='border: 1px solid black; padding: 5px;'><b>1.1</b></td>
+          </tr>
+          <tr style='background-color: #F5FFFA;'>
+            <td style='border: 1px solid black; padding: 5px;'><b>Average</b></td>
+            <td style='border: 1px solid black; padding: 5px;'><b>0.9</b></td>
+            <td style='border: 1px solid black; padding: 5px;'><b>0.9</b></td>
+          </tr>
+          <tr style='background-color: #FF0000;'>
+            <td style='border: 1px solid black; padding: 5px;'><b>Poor</b></td>
+            <td style='border: 1px solid black; padding: 5px;'><b>0.7</b></td>
+            <td style='border: 1px solid black; padding: 5px;'><b>0.7</b></td>
+          </tr>
+        </tbody>
+      </table>"
+        )
+      )
+    })
+    
+    
+    
+    
+    output$Season_table <- renderTable({
+      season_stats
+    })
+    
+    output$xwOBA_table <- renderTable({
+      xwOBA_table_data
+    })
+    
+    
+    
+    
+    output$xwOBA_key <- renderUI({
+      tags$div(
+        style = "border: 1px solid black; padding: 10px; display: inline-block; background-color: #f9f9f9; margin-bottom: 10px;",
+        HTML(paste("<b>","Avg. SD+ = 100", "<br>", "Avg.SD Score = 0.93", "<br>", "Target SD Score = ≥1.00", "<br>",  "Avg. xwOBA on XBH = .778"))
+      )
+    })
+    
+    
+    output$heat_map <- renderPlot({
+      heat_map
+    })
+    
+  })
+  
+  
+  
+}
+
+#########################################################################################   
+shinyApp(ui = ui, server = server)
