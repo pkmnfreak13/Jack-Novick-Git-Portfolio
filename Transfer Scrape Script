@@ -1,7 +1,7 @@
 s = Sys.time()
 
 # Source ID Join functions. 
-source("C:/Users/jackt/Downloads/Transfer_DB_Functions.R", local = T)
+source("path_to_functions", local = T)
 
 # MLS Transfer Overview Page  ####################################################################################################################################
 year = format(Sys.Date(), "%Y")
@@ -15,7 +15,7 @@ transfermarkt_teams <- sort(c("miami", "orlando", "new-york-city", "philadelphia
                               "portland", "kansas-city", "colorado", "los-angeles"))
 
 # URL based on season 
-url <- paste0("https://www.transfermarkt.us/major-league-soccer/transfers/wettbewerb/MLS1/plus/?saison_id=", year, "&s_w=&leihe=1&intern=0&intern=1")
+url <- paste0("link_to_site_for_scrape", year, "rest_of_link")
 
 # Get player links.
 player_links <- read_html(url) %>%
@@ -25,7 +25,7 @@ player_links <- read_html(url) %>%
   html_attr("href")
 
 # Get unique links (unique players)
-player_links <- paste0("https://www.transfermarkt.us", player_links)
+player_links <- paste0("player_links_site", player_links)
 unique_links <- unique(player_links)
 
 # Player Bios ####################################################################################################################################
