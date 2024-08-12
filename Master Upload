@@ -1,0 +1,105 @@
+library(shiny)
+library(dplyr)
+library(shinycssloaders)
+library(shinyjs)
+
+
+
+###### UI ######
+ui <- fluidPage(
+  useShinyjs(),  
+  titlePanel("Upload Game CSV"),
+  sidebarLayout(
+    sidebarPanel(
+      fileInput("file", "Input CSV File", accept = ".csv"),
+      textInput("umpire", "Umpire Name", value = ""),
+      textInput("game_number", "Game Number", value = ""),
+      actionButton("upload", "Upload")
+    ),
+    mainPanel(
+      withSpinner(textOutput("status"), type = 8, id = "spinner_status")  # Add an id for the spinner
+    )
+  ),
+  tags$head(
+    tags$style(
+      HTML(
+        "#status.error { color: red; }
+         #status.success { color: green; }"
+      )
+    )
+  )
+)
+
+###### server ######
+server <- function(input, output, session) {
+  
+  
+  ##### add max limit for upload size #####
+  options(shiny.maxRequestSize = 50*1024^2)  
+  
+  hide(id = "spinner_status")
+  
+  observeEvent(input$upload, {
+    req(input$file)
+    
+    ###### spinner activated when uploaded ######
+    show(id = "spinner_status")
+    
+    tryCatch({
+      ###### new game CSV ######
+      new_game_file <- input$file$datapath
+      
+      ###### master CSV ######
+      master_file <- "Master_data2.csv"
+      master_data <- read.csv(master_file, stringsAsFactors = FALSE)
+      
+      ###### load new game CSV ######
+      new_game_data <- read.csv(new_game_file, stringsAsFactors = FALSE, na.strings = "")
+      
+      ###### fill in Umpire and GameNumber columns with user inputs ######
+      new_game_data$Umpire <- input$umpire
+      new_game_data$GameNumber <- input$game_number
+      
+      ###### columns in new game data match master data types ######
+      for (col in colnames(master_data)) {
+        if (col %in% colnames(new_game_data)) {
+          new_game_data[[col]] <- as(new_game_data[[col]], class(master_data[[col]]))
+        }
+      }
+      
+      ###### column order matches ######
+      new_game_data <- new_game_data %>% select(colnames(master_data))
+      
+      ###### duplicate GameUIDs ######
+      new_game_ids <- new_game_data$GameUID
+      existing_ids <- master_data$GameUID
+      
+      if (any(new_game_ids %in% existing_ids)) {
+        stop("Duplicate Game IDs found. Data not Uploaded")
+      }
+      
+      ###### wrote the new game data to the master data ######
+      updated_master_data <- bind_rows(master_data, new_game_data)
+      
+      ###### Write the updated data back to the master CSV ######
+      write.csv(updated_master_data, master_file, row.names = FALSE)
+      
+      ###### output status ######
+      output$status <- renderText("Uploaded Successfully To The Master CSV")
+      shinyjs::removeClass(selector = "#status", class = "error")
+      shinyjs::addClass(selector = "#status", class = "success")
+    }, error = function(e) {
+      ###### output error ######
+      output$status <- renderText(paste("Error uploading new game data:", e$message))
+      shinyjs::removeClass(selector = "#status", class = "success")
+      shinyjs::addClass(selector = "#status", class = "error")
+      
+    })
+    
+    ###### hide the spinner after output ######
+    hide(id = "spinner_status")
+  })
+}
+
+
+shinyApp(ui = ui, server = server)
