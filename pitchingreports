@@ -1,0 +1,448 @@
+library(shiny)
+library(tidyverse)
+library(dplyr)
+library(capture)
+library(DT)
+library(reactable)
+library(ggridges)
+library(plotly)
+library(zoo)
+
+master  <- read.csv("Master_data.csv")
+master$Date = as.Date(master$Date, format = "%m/%d/%y")
+master <- master %>%
+  mutate(
+    TaggedPitchType = case_when(
+      Pitcher == 'Powers, Nick' & TaggedPitchType == 'Slider' ~ 'Curveball',
+      Pitcher == 'Rush, Wyatt' & TaggedPitchType == 'Slider' ~ 'Cutter',
+      Pitcher == 'Dzierwa, Joseph' & TaggedPitchType == 'Curveball' ~ 'Slider',
+      Pitcher == 'Cook, Harrison' & TaggedPitchType == 'Fastball' ~ 'Sinker',
+      Pitcher == 'Szczepaniak, Ryan' & TaggedPitchType == 'Slider' ~ 'Curveball',
+      Pitcher == 'Farquhar, Tate' & TaggedPitchType == 'Curveball' ~ 'Slider',
+      Pitcher == 'Hopman, Zach' & TaggedPitchType == 'Sinker' ~ 'Fastball',
+      Pitcher == 'Chapman, Max' & TaggedPitchType == 'Curveball' ~ 'Slider',
+      Pitcher == 'Rush, Wyatt' & TaggedPitchType == 'Fastball' ~ 'Sinker',
+      Pitcher == 'Rush, Wyatt' & TaggedPitchType == 'Slider' ~ 'Cutter',
+      Pitcher == 'Carson, Andrew' & TaggedPitchType == 'Curveball' ~ 'Slider',
+      Pitcher == 'Pianto, Dominic' & TaggedPitchType == 'Fastball' ~ 'Sinker',
+      Pitcher == 'Mishoulam, Aaron' & TaggedPitchType == 'Fastball' ~ 'Sinker',
+      Pitcher == 'Kaminski, Dylan' & TaggedPitchType == 'Changeup' ~ 'Splitter',
+      TRUE ~ TaggedPitchType),
+    # Setting up season dates (random dates in middle of season are practice scrimmages)
+    Season = case_when(
+      (Date < '2023-02-17' | Date == '2023-02-28' | Date == '2023-03-01' | Date == '2023-03-23' | Date == '2023-04-27') ~ "2023 - SCRIMMAGES",
+      (Date >= '2023-02-17' & Date <= '2023-08-01') ~ "2023 - SEASON",
+      (Date >= '2023-09-10' & Date <= '2024-02-15'|Date == '2023-12-02'| Date == '2023-10-02') ~ "2024 - SCRIMMAGES",
+      (Date >= '2024-02-16' & Date <= '2024-08-01') ~ '2024 - SEASON',
+      (Date >= '2024-08-25' & Date <= '2025-02-13') ~ "2025 - SCRIMMAGES",
+      (Date >= '2025-02-14' & Date <= '2025-08-01') ~ '2025 - SEASON'),
+    Year = case_when(
+      (Date >= '2022-09-01' & Date < '2023-08-01') ~ '2023',
+      (Date >= '2023-09-01' & Date < '2024-08-01') ~ '2024',
+      (Date >= '2024-09-01' & Date < '2025-08-01') ~ '2025',
+    ))
+
+# Strike-zone check 
+master$strikezone <- ifelse((master$PlateLocHeight >= 1.378) & (master$PlateLocHeight <= 3.622) &
+                              (master$PlateLocSide >= -.83) & (master$PlateLocSide <= .83), 1, 0)
+
+
+
+# Colors to use for pitches (plots with color)
+pitch_colors <- scale_colour_manual(values = c("Fastball" = "red",
+                                               "Curveball" = "navy",
+                                               "ChangeUp" = "orchid",
+                                               'Splitter' = 'lightblue',
+                                               "Slider" = "orange",
+                                               "Sinker" = "darkgreen",
+                                               "Cutter" = "brown"))
+# Colors to use for pitches (plots with fill)
+pitch_colors_fill <- scale_fill_manual(values = c("Fastball" = "red",
+                                                  "Curveball" = "navy",
+                                                  "ChangeUp" = "orchid",
+                                                  'Splitter' = 'lightblue',
+                                                  
+                                                  "Slider" = "orange",
+                                                  "Sinker" = "darkgreen",
+                                                  "Cutter" = "brown"))
+
+
+ui <- fluidPage(
+  mainPanel(
+    id = "Pitcher_Report",
+    fluidRow(
+      column(3,
+             selectInput(
+               inputId = "Pitcher_Input",
+               label = "Pitcher",
+               choices = sort(unique(master$Pitcher[master$Pitcher != "" & master$PitcherTeam == "MIC_SPA" & master$Season == '2024 - SEASON']))
+             )
+      ),
+      column(3,
+             selectInput(
+               inputId = "Season_Input",
+               label = "Season",
+               choices = c('2025 - SCRIMMAGES', '2024 - SEASON', '2024 - SCRIMMAGES', '2023 - SEASON', '2023 - SCRIMMAGES')
+             )
+      ),
+      
+      column(
+        3,
+        selectInput(
+          inputId = "Game_Select_Input",
+          label = "Select Game",
+          choices = ""
+        )
+      ),
+      column(3,
+             selectInput(
+               inputId = "BatterHand_Input",
+               label = "Batter Hand",
+               choices = c("Both", "Right", "Left")
+             )
+      ),
+      column(
+        3,
+        p("", style = "margin-bottom: 25px;"),
+        capture_pdf(
+          selector = "#Pitcher_Report",
+          filename = paste("Pitcher_Report"),
+          loading = loading(),
+          margins = 10,
+          icon("download"), " Download"),
+      )
+      
+    ),
+    
+    
+    fluidRow(
+      column(10,
+             reactableOutput("season_stat_sum"),
+             align = "center"
+      )
+    ),
+    
+    
+    fluidRow(
+      column(6,
+             plotlyOutput("interactive_movement_chart"),
+             align = "center"
+      ),
+      column(6,
+             plotOutput("velocity_distribution"),
+             align = "center"
+      ),
+      
+      column(6,
+             plotOutput("usage_graph"),
+             align = "center"
+      )
+      
+      
+    ),
+    
+    fluidRow(
+      column(10,
+             reactableOutput("pitch_profile"),
+             align = "center"
+      )
+    )
+  )
+)
+
+
+server <- function(input, output, session) {
+  
+  observeEvent(input$Season_Input,{
+    
+    updateSelectInput(session,
+                      inputId = "Pitcher_Input",
+                      label = "Pitcher",
+                      choices = sort(unique(master$Pitcher[master$Pitcher != "" & master$PitcherTeam == "MIC_SPA" & master$Season == input$Season_Input]))
+    )
+    
+    # Update game selection based on the selected season and pitcher
+    observeEvent(input$Pitcher_Input, {
+      updateSelectInput(session,
+                        inputId = "Game_Select_Input",
+                        label = "Select Game",
+                        choices = c("All", rev(sort(as.character(unique(master$Date[master$Season == input$Season_Input & master$Pitcher == input$Pitcher_Input])))))
+      )
+    })
+  })
+  
+  
+  observeEvent(c(input$Pitcher_Input, input$BatterHand_Input, input$Game_Select_Input), {
+    
+    
+    if (input$BatterHand_Input == "Right"){
+      master <- master %>% 
+        filter(BatterSide == "Right")
+    }
+    else if(input$BatterHand_Input == "Left"){
+      master <- master %>% 
+        filter(BatterSide == "Left")
+    }
+    
+    if (input$Game_Select_Input != "All"){
+      master <- master %>% 
+        filter(as.character(Date) == as.character(input$Game_Select_Input))
+    }
+    
+    master <- master %>% 
+      filter(Pitcher == input$Pitcher_Input & Season == input$Season_Input)
+    
+    
+    #####Insert run value situations#######
+    
+    
+    
+    season_stat_sum <- master %>%  
+      summarise(IP = round(((sum(KorBB == 'Strikeout') + sum(OutsOnPlay))/3), 2),
+                PA = sum(PitchofPA == 1),
+                WHIP = sprintf("%.2f", (length(KorBB[KorBB == "Walk"]) + length(PlayResult[PlayResult == "Single" | PlayResult == "Double" | PlayResult == "Triple" | PlayResult == "HomeRun"])) / as.numeric(IP)),
+                ERA = sprintf("%.2f", sum(RunsScored[PlayResult != "Error"]) * 9 / as.numeric(IP)),
+                FIP = format(round((length(PlayResult[PlayResult == "HomeRun"])*13 + (length(PitchCall[PitchCall == "HitByPitch"]) + length(KorBB[KorBB == "Walk"]))*3 - length(KorBB[KorBB == "Strikeout"])*2) / as.numeric(IP) + 3.2,2),2),
+                'K%' = paste0(format(round(length(KorBB[KorBB == "Strikeout"]) / length(PitchofPA[PitchofPA == 1]) * 100,1),1),"%"),
+                'BB%' = paste0(format(round(length(KorBB[KorBB == "Walk"]) / length(PitchofPA[PitchofPA == 1]) * 100,1),1),"%"),
+                'K - BB%' = paste0(format(round((length(KorBB[KorBB == "Strikeout"]) / length(PitchofPA[PitchofPA == 1]) * 100) - (length(KorBB[KorBB == "Walk"]) / length(PitchofPA[PitchofPA == 1]) * 100), 1), 1), "%")
+      )
+    
+    
+    reverse_sides_pitchers <- c("Brewer, Garrett", "Sturgess, Isaac", "Arbaugh, Aidan", 
+                                "Grundman, Gannon", "Dzierwa, Joseph", "Sitarz, Gavin", 
+                                "Viebrook, George", "Agar, Jeff")
+    
+    
+    
+    
+    output$interactive_movement_chart <- renderPlotly({
+      
+      movement_chart <- master %>% 
+        ggplot(mapping = aes(x = HorzBreak, y = InducedVertBreak, color = TaggedPitchType, 
+                             text = paste("HB:", round(HorzBreak, 2), "<br>",
+                                          "iVB:", round(InducedVertBreak, 2), "<br>",
+                                          "Spin:", round(SpinRate, 0), "<br>",
+                                          "Velo:", round(RelSpeed, 1)))) + 
+        geom_point(size = 2) +  # Increase the point size
+        pitch_colors +  # Apply the color palette for points
+        labs(title = "Pitch Breaks", x = "Horizontal Movement (in)", y = "Induced Vertical Break (in)", color = "Pitch") + 
+        geom_segment(aes(y = 0, yend = 0, x = -25, xend = 25), linetype = "dashed") + 
+        geom_segment(aes(y = -25, yend = 25, x = 0, xend = 0), linetype = "dashed") +
+        {
+          if (input$Pitcher_Input %in% reverse_sides_pitchers) {
+            list(
+              annotate("text", x = -16, y = -25, label = "<-- ARM SIDE", size = 3, hjust = 0, vjust = 0),  # Bottom left corner
+              annotate("text", x = 16, y = -25, label = "GLOVE SIDE -->", size = 3, hjust = 1, vjust = 0)   # Bottom right corner
+            )
+          } else {
+            list(
+              annotate("text", x = -16, y = -25, label = "<-- GLOVE SIDE", size = 3, hjust = 0, vjust = 0),  # Bottom left corner
+              annotate("text", x = 16, y = -25, label = "ARM SIDE -->", size = 3, hjust = 1, vjust = 0)      # Bottom right corner
+            )
+          }
+        } +
+        theme_bw() + 
+        xlim(-25, 25) + ylim(-25, 25)
+      
+      ggplotly(movement_chart, tooltip = "text")
+    })
+    
+    
+    
+    
+    
+    
+    
+    # Calculate the rolling mean of pitch usage percentages
+    usage_graph_data <- master %>%
+      group_by(Date, TaggedPitchType) %>%
+      summarise(count = n()) %>%
+      group_by(Date) %>%  
+      summarise(TaggedPitchType = TaggedPitchType,
+                count = count,
+                total = sum(count),
+                percent = count / total * 100) %>%
+      arrange(Date) %>%  # Ensure data is sorted by Date
+      group_by(TaggedPitchType) %>%
+      mutate(rolling_percent = rollmean(percent, 5, fill = NA))  # Apply 5-game rolling average
+    
+    
+    
+    total_zone_percent <- round(sum(master$strikezone == 1) / nrow(master) * 100, 1)
+    total_chase_percent <- round(sum((master$strikezone == 0) & (master$PitchCall %in% c("StrikeSwinging", "FoulBall"))) / sum(master$strikezone == 0) * 100, 1)
+    total_whiff_percent <- round(sum(master$PitchCall %in% c("StrikeSwinging")) / sum(master$PitchCall %in% c("StrikeSwinging", "InPlay", "FoulBall")) * 100, 1)
+    
+    
+    
+    master$Tilt <- as.numeric(master$Tilt)
+    total <- length(master$PitchofPA)
+    pitch_profile <- master %>% 
+      group_by("Pitch" = TaggedPitchType) %>% 
+      summarise(Count = n(),
+                'Pitch%' = paste0(format(round(n() / total * 100,1),1),'%'),
+                'Velo' = round(mean(RelSpeed, na.rm = TRUE), 1),
+                'iVB' = round(mean(InducedVertBreak, na.rm = TRUE), 1),
+                'HB' = round(mean(HorzBreak, na.rm = TRUE), 1),
+                'Spin' = round(mean(SpinRate, na.rm = TRUE), 0),
+                'VAA' = round(mean(VertApprAngle, na.rm = TRUE), 1),
+                'HAA' = round(mean(HorzApprAngle, na.rm = TRUE), 1),
+                'VRel' = round(mean(VertRelAngle, na.rm = TRUE), 1),
+                'hRel' = round(mean(HorzRelAngle, na.rm = TRUE), 1),
+                'Ext.' = round(mean(Extension, na.rm = TRUE), 1),
+                'Tilt' = round(mean(Tilt, na.rm = TRUE), 3),
+                'Stuff+' = round(mean(Tilt, na.rm = TRUE), 3),
+                'Zone%' = round(sum(strikezone == 1) /n() * 100, 1),
+                'Chase%' = round(sum((strikezone == 0) & (PitchCall %in% c("StrikeSwinging", "FoulBall"))) / sum(strikezone == 0) * 100, 1),
+                'Whiff%' = round(sum(PitchCall %in% c("StrikeSwinging")) / sum(PitchCall %in% c("StrikeSwinging", "InPlay", "FoulBall")) * 100, 1),
+                'xwOBA Contact' = round(mean(Tilt, na.rm = TRUE), 3),
+      ) %>% 
+      arrange(desc(Count))
+    
+    
+    total_count <- sum(pitch_profile$Count)
+    all_row <- tibble(
+      Pitch = "All",
+      Count = total_count,
+      'Pitch%' = paste0(format(round(total_count / total * 100, 1), 1), '%'),
+      Velo = NA,
+      iVB = NA,
+      HB = NA,
+      Spin = NA,
+      VAA = NA,
+      HAA = NA,
+      VRel = NA,
+      hRel = NA,
+      'Ext.' = round(mean(master$Extension, na.rm = TRUE), 1),
+      Tilt = NA,
+      'Stuff+' = NA,
+      'Zone%' = total_zone_percent,
+      'Chase%' = total_chase_percent,
+      'Whiff%' = total_whiff_percent,
+      'xwOBA Contact' = NA
+    )
+    
+    pitch_profile <- bind_rows(pitch_profile, all_row)
+    
+    
+    
+    usage_graph <- ggplot(usage_graph_data, mapping = aes(x = Date, y = rolling_percent, color = TaggedPitchType)) + 
+      geom_line(size = 1) + 
+      geom_point(size = 1.5) + 
+      pitch_colors +  # Apply the color palette for lines and points
+      theme_bw() + 
+      labs(title = "5 Games Rolling Pitch Usage", x = "Date", y = "Percentage (%)", color = "Pitch")
+    
+    velocity_distribution_plot <- function(data) {
+      
+      # Get pitch types ordered by frequency
+      items_in_order <- data %>%
+        group_by(TaggedPitchType) %>%
+        summarise(count = n()) %>%
+        arrange(desc(count)) %>%
+        pull(TaggedPitchType)
+      
+      # Create the plot
+      ggplot(data, aes(x = RelSpeed, y = fct_relevel(TaggedPitchType, rev(items_in_order)), fill = TaggedPitchType)) +
+        geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01, alpha = 0.7) +
+        pitch_colors_fill +  # Apply the fill color palette
+        labs(title = "Pitch Velocity Distribution", x = "Velocity (mph)", y = NULL) +
+        theme_minimal() +
+        theme(
+          axis.title.y = element_blank(), 
+          axis.text.y = element_text(hjust = 1, size = 12),  # Align pitch type labels to the left
+          axis.ticks.y = element_blank(), 
+          legend.position = "none",
+          plot.title = element_text(hjust = 0.5, size = 20),
+          text = element_text(size = 14)  # Improve text clarity
+        ) +
+        geom_vline(data = data %>% group_by(TaggedPitchType) %>% summarise(mean_speed = mean(RelSpeed, na.rm = TRUE)),
+                   aes(xintercept = mean_speed), color = "black", linetype = "dashed") +
+        facet_wrap(~ TaggedPitchType, ncol = 1, scales = "free_y") +
+        scale_y_discrete(labels = NULL)
+    }
+    
+    
+    
+    
+    
+    output$velocity_distribution <- renderPlot({
+      filtered_data <- master %>%
+        filter(Pitcher == input$Pitcher_Input & Season == input$Season_Input)
+      
+      velocity_distribution_plot(filtered_data)
+    })
+    
+    output$season_stat_sum <- renderReactable({
+      reactable(
+        season_stat_sum,
+        columns = list(
+          IP = colDef(name = "IP", align = "center"),
+          WHIP = colDef(name = "WHIP", align = "center"),
+          ERA = colDef(name = "ERA", align = "center"),
+          FIP = colDef(name = "FIP", align = "center"),
+          PA = colDef(name = "PA", align = "center"),
+          `K%` = colDef(name = "K%", align = "center"),
+          `BB%` = colDef(name = "BB%", align = "center"),
+          `K - BB%` = colDef(name = "K – BB%", align = "center")
+        ),
+        bordered = TRUE,
+        striped = FALSE,
+        highlight = TRUE
+      )
+    })
+    
+    
+    
+    
+    
+    
+    
+    output$usage_graph <- renderPlot({
+      usage_graph
+    })
+    
+    output$pitch_profile <- renderReactable({
+      reactable(
+        pitch_profile,
+        columns = list(
+          Pitch = colDef(name = "Pitch", align = "center"),
+          Count = colDef(name = "Count", align = "center"),
+          `Pitch%` = colDef(name = "Pitch%", align = "center"),
+          Velo = colDef(name = "Velo", align = "center"),
+          iVB = colDef(name = "iVB", align = "center"),
+          HB = colDef(name = "HB", align = "center"),
+          Spin = colDef(name = "Spin", align = "center"),
+          VAA = colDef(name = "VAA", align = "center"),
+          HAA = colDef(name = "HAA", align = "center"),
+          VRel = colDef(name = "VRel", align = "center"),
+          hRel = colDef(name = "hRel", align = "center"),
+          Ext. = colDef(name = "Ext.", align = "center"),
+          Tilt = colDef(name = "Tilt", align = "center"),
+          `Stuff+` = colDef(name = "Stuff+", align = "center"),
+          `Zone%` = colDef(name = "Zone%", align = "center"),
+          `Chase%` = colDef(name = "Chase%", align = "center"),
+          `Whiff%` = colDef(name = "Whiff%", align = "center"),
+          `xwOBA Contact` = colDef(name = "xwOBA Contact", align = "center")
+        ),
+        bordered = TRUE,
+        striped = FALSE,
+        highlight = TRUE,
+        defaultPageSize = 10,
+        showPageSizeOptions = TRUE,
+        pageSizeOptions = c(5, 10, 15)
+      )
+    })
+    
+    
+    
+    
+  })
+  
+  
+  
+  
+}
+
+# Run the application 
+shinyApp(ui = ui, server = server)
