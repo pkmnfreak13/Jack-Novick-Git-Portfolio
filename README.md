@@ -1,5 +1,15 @@
 # Data Projects
 
+# Pitching Reports 
+- Utilized R Shiny to create a post-game pitching report for the coaching staff.
+- Deployed into the main MSU Baseball analytics hub.
+- Interactive plots to see more in-depth data on plot points.
+
+
+![image](https://github.com/user-attachments/assets/ed01b935-f9c0-4695-8f39-5144ea20064a)
+
+
+
 # Master Upload
 - Made and deployed into the main MSU Baseball analytics hub.
 - Utilized to upload new game data into the main database.
