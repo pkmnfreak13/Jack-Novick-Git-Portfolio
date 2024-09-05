@@ -7,6 +7,7 @@ library(reactable)
 library(ggridges)
 library(plotly)
 library(zoo)
+library(lubridate)
 
 master  <- read.csv("Master_data.csv")
 master$Date = as.Date(master$Date, format = "%m/%d/%y")
@@ -42,6 +43,11 @@ master <- master %>%
       (Date >= '2024-09-01' & Date < '2025-08-01') ~ '2025',
     ))
 
+
+##########test for tilt#######
+
+
+
 # Strike-zone check 
 master$strikezone <- ifelse((master$PlateLocHeight >= 1.378) & (master$PlateLocHeight <= 3.622) &
                               (master$PlateLocSide >= -.83) & (master$PlateLocSide <= .83), 1, 0)
@@ -67,89 +73,154 @@ pitch_colors_fill <- scale_fill_manual(values = c("Fastball" = "red",
                                                   "Cutter" = "brown"))
 
 
+hit_model <- readRDS("hit_model.rds")
+
 ui <- fluidPage(
   mainPanel(
     id = "Pitcher_Report",
-    fluidRow(
-      column(3,
-             selectInput(
-               inputId = "Pitcher_Input",
-               label = "Pitcher",
-               choices = sort(unique(master$Pitcher[master$Pitcher != "" & master$PitcherTeam == "MIC_SPA" & master$Season == '2024 - SEASON']))
-             )
-      ),
-      column(3,
-             selectInput(
-               inputId = "Season_Input",
-               label = "Season",
-               choices = c('2025 - SCRIMMAGES', '2024 - SEASON', '2024 - SCRIMMAGES', '2023 - SEASON', '2023 - SCRIMMAGES')
-             )
+    column(
+      10,
+      offset = 4,
+      titlePanel("Vandy Report"),
+      hr(style = "border-color: black;"),
+      
+      fluidRow(
+        column(
+          3,
+          selectInput(
+            inputId = "Pitcher_Input",
+            label = "Pitcher",
+            choices = sort(unique(master$Pitcher[master$Pitcher != "" & master$PitcherTeam == "MIC_SPA" & master$Season == '2024 - SEASON']))
+          )
+        ),
+        
+        column(
+          3,
+          selectInput(
+            inputId = "Season_Input",
+            label = "Season",
+            choices = c('2025 - SCRIMMAGES', '2024 - SEASON', '2024 - SCRIMMAGES', '2023 - SEASON', '2023 - SCRIMMAGES')
+          )
+        ),
+        
+        column(
+          3,
+          selectInput(
+            inputId = "Game_Select_Input",
+            label = "Select Game",
+            choices = ""
+          )
+        ),
+        column(3,
+               selectInput(
+                 inputId = "BatterHand_Input",
+                 label = "Batter Hand",
+                 choices = c("Both", "Right", "Left")
+               )
+        ),
+        column(
+          3,
+          p("", style = "margin-bottom: 25px;"),
+          capture_pdf(
+            selector = "#Pitcher_Report",
+            filename = paste("Pitcher_Report"),
+            loading = loading(),
+            margins = 10,
+            icon("download"), " Download"),
+        ),
       ),
       
-      column(
-        3,
-        selectInput(
-          inputId = "Game_Select_Input",
-          label = "Select Game",
-          choices = ""
-        )
-      ),
-      column(3,
-             selectInput(
-               inputId = "BatterHand_Input",
-               label = "Batter Hand",
-               choices = c("Both", "Right", "Left")
-             )
-      ),
-      column(
-        3,
-        p("", style = "margin-bottom: 25px;"),
-        capture_pdf(
-          selector = "#Pitcher_Report",
-          filename = paste("Pitcher_Report"),
-          loading = loading(),
-          margins = 10,
-          icon("download"), " Download"),
-      )
-      
-    ),
-    
-    
-    fluidRow(
-      column(10,
-             reactableOutput("season_stat_sum"),
-             align = "center"
-      )
-    ),
-    
-    
-    fluidRow(
-      column(6,
-             plotlyOutput("interactive_movement_chart"),
-             align = "center"
-      ),
-      column(6,
-             plotOutput("velocity_distribution"),
-             align = "center"
-      ),
-      
-      column(6,
-             plotOutput("usage_graph"),
-             align = "center"
-      )
-      
-      
-    ),
-    
-    fluidRow(
-      column(10,
-             reactableOutput("pitch_profile"),
-             align = "center"
+      hr(style = "border-color: black;"),
+      wellPanel(style = "background: white; border-color:black; border-width:2px;",
+                id = "Pitcher_Report",
+                
+                fluidRow(
+                  column(
+                    2,
+                    img(
+                      src = "SpartanSavantJW.PNG",
+                      height = 150,
+                      width = 150
+                    ),
+                    align = "center",
+                  ),
+                  column(
+                    5,
+                    h2(strong(textOutput("selected_pitcher"))),
+                    hr(style = "border-color: black;"),
+                    style = "padding-right:0px;"
+                  ),
+                  column(
+                    5,
+                    h2("Vandy Report"),
+                    hr(style = "border-color: black;"),
+                    h2(textOutput("selected_gamedate")),
+                    align = "right",
+                    style = "padding-left:0px; padding-right:50px;"
+                  )
+                ),
+                
+                hr(style = "border-color: black;"),
+                
+                fluidRow(
+                  column(
+                    12,
+                    h3("Box Stats Table"),
+                    reactableOutput("season_stat_sum"),
+                    align = "center"
+                    
+                  )
+                ),
+                
+                br(),
+                br(),
+                
+                fluidRow(
+                  column(6, plotOutput("velocity_distribution"), align = "center"),
+                  column(6, plotlyOutput("interactive_movement_chart", width = 550, height = 450), align = "center")
+                ),
+                
+                br(),
+                br(),
+                br(),
+                br(),
+                
+                
+                conditionalPanel(
+                  condition = "input.Game_Select_Input == 'All'",
+                  fluidRow(
+                    column(
+                      12,
+                      h3(strong("5 Games Rolling Pitch Usage")),
+                      plotOutput("usage_graph"),
+                      align = "center"
+                    )
+                  )
+                ),
+                
+                br(),
+                
+                fluidRow(
+                  column(
+                    10,
+                    offset = 1,
+                    reactableOutput("pitch_profile"),
+                    align = "center"
+                  )
+                ),
+                
+                
+                br(),
+                br(),
+                
+                p(em("If the contents of this page appear distorted, please decrease your web browser zoom to 80% or 90%."),
+                  align = "center",
+                  style = "font-size:20px;")
       )
     )
   )
-)
-
+)  
+  
 
 server <- function(input, output, session) {
   
@@ -169,6 +240,26 @@ server <- function(input, output, session) {
                         choices = c("All", rev(sort(as.character(unique(master$Date[master$Season == input$Season_Input & master$Pitcher == input$Pitcher_Input])))))
       )
     })
+  })
+  
+  # Reactive expressions to capture the selected batter and game date
+  selected_pitcher <- reactive({
+    req(input$Pitcher_Input)
+    input$Pitcher_Input
+  })
+  
+  selected_gamedate <- reactive({
+    req(input$Game_Select_Input)
+    input$Game_Select_Input
+  })
+  
+  # Render the text outputs in the UI
+  output$selected_pitcher <- renderText({
+    selected_pitcher()
+  })
+  
+  output$selected_gamedate <- renderText({
+    selected_gamedate()
   })
   
   
@@ -192,6 +283,12 @@ server <- function(input, output, session) {
     master <- master %>% 
       filter(Pitcher == input$Pitcher_Input & Season == input$Season_Input)
     
+    
+    master <- master %>% 
+      separate(Tilt, into = c("hour", "minute"), sep = ":") %>% 
+      mutate(hour = as.integer(hour),
+             minute = as.integer(minute)) %>% 
+      mutate(time_minutes = hour * 60 + minute)
     
     #####Insert run value situations#######
     
@@ -223,9 +320,11 @@ server <- function(input, output, session) {
                              text = paste("HB:", round(HorzBreak, 2), "<br>",
                                           "iVB:", round(InducedVertBreak, 2), "<br>",
                                           "Spin:", round(SpinRate, 0), "<br>",
-                                          "Velo:", round(RelSpeed, 1)))) + 
-        geom_point(size = 2) +  # Increase the point size
-        pitch_colors +  # Apply the color palette for points
+                                          "Velo:", round(RelSpeed, 1), "<br>",
+                                          "EV:", round(ExitSpeed, 0), "<br>",
+                                          "Distance:", round(Distance, 0)))) + 
+        geom_point(size = 1) +  
+        pitch_colors +  
         labs(title = "Pitch Breaks", x = "Horizontal Movement (in)", y = "Induced Vertical Break (in)", color = "Pitch") + 
         geom_segment(aes(y = 0, yend = 0, x = -25, xend = 25), linetype = "dashed") + 
         geom_segment(aes(y = -25, yend = 25, x = 0, xend = 0), linetype = "dashed") +
@@ -254,7 +353,7 @@ server <- function(input, output, session) {
     
     
     
-    # Calculate the rolling mean of pitch usage percentages
+    
     usage_graph_data <- master %>%
       group_by(Date, TaggedPitchType) %>%
       summarise(count = n()) %>%
@@ -263,9 +362,9 @@ server <- function(input, output, session) {
                 count = count,
                 total = sum(count),
                 percent = count / total * 100) %>%
-      arrange(Date) %>%  # Ensure data is sorted by Date
+      arrange(Date) %>%  
       group_by(TaggedPitchType) %>%
-      mutate(rolling_percent = rollmean(percent, 5, fill = NA))  # Apply 5-game rolling average
+      mutate(rolling_percent = rollmean(percent, 5, fill = NA)) 
     
     
     
@@ -275,7 +374,9 @@ server <- function(input, output, session) {
     
     
     
-    master$Tilt <- as.numeric(master$Tilt)
+   
+    
+    
     total <- length(master$PitchofPA)
     pitch_profile <- master %>% 
       group_by("Pitch" = TaggedPitchType) %>% 
@@ -290,7 +391,7 @@ server <- function(input, output, session) {
                 'VRel' = round(mean(VertRelAngle, na.rm = TRUE), 1),
                 'hRel' = round(mean(HorzRelAngle, na.rm = TRUE), 1),
                 'Ext.' = round(mean(Extension, na.rm = TRUE), 1),
-                'Tilt' = round(mean(Tilt, na.rm = TRUE), 3),
+                'Tilt' = paste0(as.integer(mean(time_minutes, na.rm = TRUE)/ 60), ":", as.integer(mean(time_minutes, na.rm = TRUE)) %% 60),
                 'Stuff+' = round(mean(Tilt, na.rm = TRUE), 3),
                 'Zone%' = round(sum(strikezone == 1) /n() * 100, 1),
                 'Chase%' = round(sum((strikezone == 0) & (PitchCall %in% c("StrikeSwinging", "FoulBall"))) / sum(strikezone == 0) * 100, 1),
@@ -329,32 +430,33 @@ server <- function(input, output, session) {
     usage_graph <- ggplot(usage_graph_data, mapping = aes(x = Date, y = rolling_percent, color = TaggedPitchType)) + 
       geom_line(size = 1) + 
       geom_point(size = 1.5) + 
-      pitch_colors +  # Apply the color palette for lines and points
+      pitch_colors + 
       theme_bw() + 
-      labs(title = "5 Games Rolling Pitch Usage", x = "Date", y = "Percentage (%)", color = "Pitch")
+      theme(
+        text = element_text(size = 14)  
+      ) +
+      labs(title = "", x = "Date", y = "Percentage (%)", color = "Pitch")
     
     velocity_distribution_plot <- function(data) {
       
-      # Get pitch types ordered by frequency
       items_in_order <- data %>%
         group_by(TaggedPitchType) %>%
         summarise(count = n()) %>%
         arrange(desc(count)) %>%
         pull(TaggedPitchType)
       
-      # Create the plot
       ggplot(data, aes(x = RelSpeed, y = fct_relevel(TaggedPitchType, rev(items_in_order)), fill = TaggedPitchType)) +
         geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01, alpha = 0.7) +
-        pitch_colors_fill +  # Apply the fill color palette
-        labs(title = "Pitch Velocity Distribution", x = "Velocity (mph)", y = NULL) +
+        pitch_colors_fill +  
+        labs(title = "", x = "Velocity (mph)", y = NULL) +
         theme_minimal() +
         theme(
           axis.title.y = element_blank(), 
-          axis.text.y = element_text(hjust = 1, size = 12),  # Align pitch type labels to the left
+          axis.text.y = element_text(hjust = 1, size = 12),  
           axis.ticks.y = element_blank(), 
           legend.position = "none",
           plot.title = element_text(hjust = 0.5, size = 20),
-          text = element_text(size = 14)  # Improve text clarity
+          text = element_text(size = 14)  
         ) +
         geom_vline(data = data %>% group_by(TaggedPitchType) %>% summarise(mean_speed = mean(RelSpeed, na.rm = TRUE)),
                    aes(xintercept = mean_speed), color = "black", linetype = "dashed") +
@@ -399,14 +501,40 @@ server <- function(input, output, session) {
     
     
     output$usage_graph <- renderPlot({
-      usage_graph
+      
+      if (input$Game_Select_Input == "All") {
+        usage_graph  
+      } else {
+        NULL  
+      }
     })
+    
+    
+    
+    
+    
     
     output$pitch_profile <- renderReactable({
       reactable(
         pitch_profile,
         columns = list(
-          Pitch = colDef(name = "Pitch", align = "center"),
+          Pitch = colDef(
+            name = "Pitch",
+            align = "center",
+            style = function(value) {
+              color <- switch(value,
+                              "Fastball" = "red",
+                              "Curveball" = "navy",
+                              "ChangeUp" = "orchid",
+                              "Splitter" = "lightblue",
+                              "Slider" = "orange",
+                              "Sinker" = "darkgreen",
+                              "Cutter" = "brown",
+                              "white" 
+              )
+              list(background = color, color = ifelse(value == "Splitter", "black", "white"))
+            }
+          ),
           Count = colDef(name = "Count", align = "center"),
           `Pitch%` = colDef(name = "Pitch%", align = "center"),
           Velo = colDef(name = "Velo", align = "center"),
@@ -428,7 +556,7 @@ server <- function(input, output, session) {
         bordered = TRUE,
         striped = FALSE,
         highlight = TRUE,
-        defaultPageSize = 10,
+        defaultPageSize = 15,
         showPageSizeOptions = TRUE,
         pageSizeOptions = c(5, 10, 15)
       )
