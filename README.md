@@ -1,5 +1,14 @@
 # Data Projects
 
+# MSU Analytics Hub  
+
+- Overhauled the main MSU Baseball analytics hub for more efficient code.
+- Added multiple new apps and deployed them into the new MSU Baseball Analytics home.
+- Made through R Shiny/Posit dashboards.
+
+
+
+
 # Pitching Reports 
 - Utilized R Shiny to create a post-game pitching report for the coaching staff.
 - Deployed into the main MSU Baseball analytics hub.
