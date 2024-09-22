@@ -156,12 +156,18 @@ ui <- fluidPage(
 
 ###################### start of server ###################### 
 server <- function(input, output, session) {
+ 
+  
+   
   batter_report <- master
+  
+  
+  
   observeEvent(input$Season_Select_Input,{
     updateSelectInput(session,
                       inputId = "Batter_Select_Input",
                       label = "Select Batter",
-                      choices = sort(as.character(unique(batter_report$Batter[input$Season_Select_Input == batter_report$Season & batter_report$BatterTeam == "MIC_SPA" & batter_report$Batter != ""])))
+                      choices = sort(as.character(unique(batter_report$Batter[input$Season_Select_Input == batter_report$Season & master$BatterTeam %in% c("MIC_SPA", "MIC_PRA") & batter_report$Batter != ""])))
     )
     
     updateSelectInput(session,
@@ -181,8 +187,31 @@ server <- function(input, output, session) {
                       choices = rev(sort(unique(batter_report$Date[input$Season_Select_Input == batter_report$Season & batter_report$Batter == input$Batter_Select_Input]))))
   })
   
+  
+  # Reactive expressions to capture the selected batter and game date
+  selected_batter <- reactive({
+    req(input$Batter_Select_Input)
+    input$Batter_Select_Input
+  })
+  
+  selected_game_date <- reactive({
+    req(input$Game_Select_Input)
+    input$Game_Select_Input
+  })
+  
+  # Render the text outputs in the UI
+  output$selected_batter <- renderText({
+    selected_batter()
+  })
+  
+  output$selected_game_date <- renderText({
+    selected_game_date()
+  })
+  
+  
   ###################### start of mapping & SD ######################
   observeEvent(c(input$Game_Select_Input,input$Batter_Select_Input),{
+    
     
     batter_report <- batter_report %>% 
       mutate(Count = paste0(Balls,"-",Strikes),
@@ -221,9 +250,9 @@ server <- function(input, output, session) {
                                ifelse(Swing == "Take" & ((Count == "3-2" & Zones == "Zone") | (Zones == "Heart" & Count == "3-1") | (Zones == "Zone" & Count == "2-2") | (Zones == "Zone" & Count == "1-2") | (Zones == "Zone" & Count == "0-2") | Zones == "Heart" & Count == "0-0"),-4.5,
                                       ifelse((Swing == "Swing" & Zones == "Chase" & Count == "3-0") | (Swing == "Take" & ((Zones == "Zone" & Count == "0-0") | (Zones == "Heart" & Count == "0-1") | (Zones == "Heart" & Count == "1-0") | (Zones == "Zone" & Count == "1-1") | (Zones == "Heart" & Count == "2-1") | (Zones == "Zone" & Count == "3-1"))),-4,
                                              ifelse(Swing == "Take" & ((Zones == "Zone" & Count == "1-0") | (Zones == "Zone" & Count == "0-1") | (Zones == "Heart" & Count == "2-0") | (Zones == "Zone" & Count == "2-1")), -3.5, 
-                                                    ifelse(Swing == "Take" & (Zones == "Zone" & Count == "2-0") | (Swing == "Swing" & (Zones == "Chase" & Count == "3-1") | (Zones == "Shadow" & Count == "3-0") | (Zones == "Chase" & Count == "2-0")), -3,
-                                                           ifelse(Swing == "Swing" & (Zones == "Chase" & Count == "3-2") | (Zones == "Chase" & Count == "1-0"),-2.5,
-                                                                  ifelse(Swing == "Swing" & ((Zones == "Chase" & Count == "0-0") | (Zones == "Chase" & Count == "0-1") | (Zones == "Zone" & Count == "2-0") | (Zones == "Chase" & Count == "1-1") | (Zones == "Chase" & Count == "2-2")),-2,
+                                                    ifelse((Swing == "Take" & (Zones == "Zone" & Count == "2-0")) | (Swing == "Swing" & ((Zones == "Chase" & Count == "3-1") | (Zones == "Shadow" & Count == "3-0") | (Zones == "Chase" & Count == "2-0"))), -3,
+                                                           ifelse(Swing == "Swing" & (Zones == "Chase" & Count == "3-2" | (Zones == "Chase" & Count == "1-0")),-2.5,
+                                                                  ifelse(Swing == "Swing" & ((Zones == "Chase" & Count == "0-0") | (Zones == "Chase" & Count == "0-1") | (Zones == "Chase" & Count == "1-1") | (Zones == "Chase" & Count == "2-2")),-2,
                                                                          ifelse(Swing == "Swing" & Zones == "Chase" & Count == "2-1",-1.5,
                                                                                 ifelse(Swing == "Swing" & ((Zones == "Chase" & Count == "0-2") | (Zones == "Chase" & Count == "1-2")),-1,
                                                                                        ifelse(Swing == "Take" & (Zones == "Shadow" & Count == "0-2") | (Zones == "Shadow" & Count == "1-2") | (Zones == "Shadow" & Count == "2-2"),-0.5,
@@ -237,16 +266,15 @@ server <- function(input, output, session) {
                                                                                                                                                ifelse(Swing == "Swing" & ((Zones == "Zone" & Count == "0-0") | (Zones == "Zone" & Count == "1-0") | (Zones == "Zone" & Count == "1-1")),4,
                                                                                                                                                       ifelse(Swing == "Swing" & ((Zones == "Zone" & Count == "0-2") | (Zones == "Zone" & Count == "1-2") | (Zones == "Zone" & Count == "2-0") | (Zones == "Zone" & Count == "2-1") | (Zones == "Zone" & Count == "2-2") | (Zones == "Zone" & Count == "3-2")),4.5,
                                                                                                                                                              ifelse(Swing == "Swing" & ((Zones == "Heart" & Count == "3-2") | (Zones == "Heart" & Count == "3-1") | (Zones == "Zone" & Count == "3-1") | (Zones == "Heart" & Count == "2-2") | (Zones == "Heart" & Count == "2-1") | (Zones == "Heart" & Count == "2-0") | (Zones == "Heart" & Count == "1-2") | (Zones == "Heart" & Count == "1-1") | (Zones == "Heart" & Count == "1-0") | (Zones == "Heart" & Count == "0-2") | (Zones == "Heart" & Count == "0-1") | (Zones == "Heart" & Count == "0-0")),5,NA
-                                                                                                                                                             )))))))))))))))))))))
+    team_hard_hit_data <- batter_report %>% 
+      filter(Season == input$Season_Select_Input)                                                                                                                                                         )))))))))))))))))))))
     
     batter_report <- batter_report %>% 
       filter(Season == input$Season_Select_Input & Batter == input$Batter_Select_Input)
     
     hit_model_data <- batter_report %>% 
       filter(PitchCall == "InPlay") %>% 
-      select(PlayResult, ExitSpeed, Angle, Distance, Bearing, Date) %>% 
-      mutate(X = sin(Bearing * pi / 180) * Distance,
-             Y = cos(Bearing * pi / 180) * Distance)
+      select(PlayResult, ExitSpeed, Angle, Date)
     
     
     hit_pred <- predict(hit_model, hit_model_data, type = "prob")
@@ -256,6 +284,8 @@ server <- function(input, output, session) {
       summarize(Season = input$Season_Select_Input,
                 #BA = format(round(length(PlayResult[PlayResult == "Single" | PlayResult == "Double" | PlayResult == "Triple" | PlayResult == "HomeRun"]) / (length(PlayResult[PlayResult == "Single" | PlayResult == "Double" | PlayResult == "Triple" | PlayResult == "HomeRun" | PlayResult == "Out"]) + length(KorBB[KorBB == "Strikeout"])),3),3),
                 'SD+' =  as.integer(sum(SD_Score, na.rm = TRUE) / n() * 100 / .93),
+                'HH% (#)' = paste0(format(round(length(PitchCall[PitchCall == "InPlay" & ExitSpeed >= 90]) / length(PitchCall[PitchCall == "InPlay"]) * 100,1),1),"%", " (",length(PitchCall[PitchCall == "InPlay" & ExitSpeed >= 90]),")" ),
+                'Team HH% (#)' = paste0(format(round(length(team_hard_hit_data$PitchCall[team_hard_hit_data$PitchCall == "InPlay" & team_hard_hit_data$ExitSpeed >= 90]) / length(team_hard_hit_data$PitchCall[team_hard_hit_data$PitchCall == "InPlay"]) * 100,1),1),"%", " (",length(team_hard_hit_data$PitchCall[team_hard_hit_data$PitchCall == "InPlay" & team_hard_hit_data$ExitSpeed >= 90]),")" ),
                 #'K/BB' = format(round(length(KorBB[KorBB == "Walk"]) / length(KorBB[KorBB == "Strikeout"]),2),2),
                 #wOBA = format(round((length(KorBB[KorBB == "Walk"])*.69 + length(PitchCall[PitchCall == "HitByPitch"])*.72 + length(PlayResult[PlayResult == "Single"])*.89 + length(PlayResult[PlayResult == "Double"])*1.27 + length(PlayResult[PlayResult == "Triple"])*1.62 + length(PlayResult[PlayResult == "HomeRun"])*2.1)/(length(PlayResult[PlayResult == "Single" | PlayResult == "Double" | PlayResult == "Triple" | PlayResult == "HomeRun" | PlayResult == "Out" | PlayResult == "FieldersChoice"]) + length(KorBB[KorBB == "Strikeout" | KorBB == "Walk"]) + length(PitchCall[PitchCall == "HitByPitch"])), 3), 3),
                 #xwOBA = as.numeric(format(round((length(KorBB[KorBB == "Walk"])*.69 + length(PitchCall[PitchCall == "HitByPitch"])*.72 + sum(hit_pred$Single)*.89 + sum(hit_pred$Double)*1.27 + sum(hit_pred$Triple)*1.62 + sum(hit_pred$HomeRun)*2.1)/(length(PlayResult[PlayResult == "Single" | PlayResult == "Double" | PlayResult == "Triple" | PlayResult == "HomeRun" | PlayResult == "Out" | PlayResult == "FieldersChoice"]) + length(KorBB[KorBB == "Strikeout" | KorBB == "Walk"]) + length(PitchCall[PitchCall == "HitByPitch"])), 3), 3)),
@@ -265,6 +295,8 @@ server <- function(input, output, session) {
                 #"1P-Str Swing%" = paste0(as.integer(length(PitchofPA[PitchofPA == 1 & Swing == "Swing" & (Zones == "Heart" | Zones == "Zone")]) / length(PitchofPA[PitchofPA == 1 & (Zones == "Heart" | Zones == "Zone")]) * 100),"%"),
                 #"2-Str Chase%" = paste0(as.integer(length(Swing[Swing == "Swing" & Strikes == 2 & (Zones == "Chase" | Zones == "Waste")]) / length(Strikes[Strikes == 2 & (Zones == "Waste" | Zones == "Chase")]) * 100),"%"),
       )
+    
+    
     
     
     
@@ -370,7 +402,6 @@ server <- function(input, output, session) {
       mutate(ab = paste0("PA:", AtBat, " | ", last(play_result), " | EV: ",as.integer(last(ExitSpeed)), " | LA: ",as.integer(last(Angle)))) %>% 
       ungroup()
     
-    ##################################### fix this bullshit im losing my god damn mind ############################################### 
     
     
     
@@ -515,9 +546,54 @@ server <- function(input, output, session) {
                 EV = as.integer(mean(ExitSpeed, na.rm = TRUE)),
                 LA = as.integer((mean(Angle, na.rm = TRUE))))
     
+    # Define a named vector with batter names and their corresponding emails
+    batter_emails <- c(
+      "Anderson, Jacob" = "meowboy6999@gmail.com",
+      "Bright, Noah" = "rackrovick123343421@gmail.com"
+    )
     
+    observeEvent(input$send_report, {
+      # Define the URL and file path for the screenshot
+      url <- "http://127.0.0.1:4600"  # Replace with your app's URL if it's deployed
+      file_path <- paste0(tempfile(), ".png")
+      
+      # Capture the screenshot
+      webshot2::webshot(
+        url, 
+        file = file_path, 
+        selector = "#Batter_Report",  # Capture the specific tab
+        vwidth = 1200, 
+        vheight = 800
+      )
+      
+      # Get the email address based on the selected batter
+      batter_name <- selected_batter()
+      recipient_email <- batter_emails[batter_name]
+      
+      # Ensure the email is defined (in case of a mismatch)
+      if (!is.na(recipient_email)) {
+        # Send the email with the screenshot attached
+        send_email_with_attachment(file_path, batter_name, recipient_email)
+      } else {
+        showNotification("No email address found for the selected batter.", type = "error")
+      }
+    })
     
-    ###################### outputs ###################### 
+    send_email_with_attachment <- function(file_path, batter_name, recipient_email) {
+      library(gmailr)
+      
+      # Compose the email
+      email <- gm_mime() %>%
+        gm_to(recipient_email) %>%
+        gm_from("jacktnovick@gmail.com") %>%
+        gm_subject(paste("Batter Report for", batter_name)) %>%
+        gm_text_body("Please find the attached report.") %>%
+        gm_attach_file(file_path)
+      
+      # Send the email
+      gm_send_message(email)
+    }
+    
     
     output$plate_graph <- renderPlot({
       plate_graph
@@ -600,7 +676,9 @@ server <- function(input, output, session) {
       heat_map
     })
     
+    
   })
+  
   
   
   
