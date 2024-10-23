@@ -55,4 +55,3 @@
 
 - Soon to be a hub for the 2023 United Shore Professional Baseball League Season.
 - Insight into all aspects of the game of baseball (Pitching, hitting, umpire reporting, etc.)
-- Done by 8/23/24
