@@ -15,7 +15,8 @@
 - Interactive plots to see more in-depth data on plot points.
 
 
-![image](https://github.com/user-attachments/assets/ed01b935-f9c0-4695-8f39-5144ea20064a)
+![image](https://github.com/user-attachments/assets/bd1ab832-0587-4670-a0ed-a7044a65b06a)
+
 
 
 
