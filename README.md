@@ -8,6 +8,15 @@
 
 
 
+# Stuff+ Model | Matchup Scores 
+- Used big data from all 2023/2024 BIG10 games to train a model to identify higher levels of pitches.
+- Matchup scores were created by using each pitcher's stuff+ of each pitch type, then averaging them out and comparing them to a hitter's reverse stuff+ (Big Bat+), then weighting based on pitch %.
+
+
+
+  ![image](https://github.com/user-attachments/assets/ea3f1c70-6709-4c9a-961e-3371b7ca47e9)
+
+
 
 # Pitching Reports 
 - Utilized R Shiny to create a post-game pitching report for the coaching staff.
