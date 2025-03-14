@@ -13,8 +13,6 @@ library(shinythemes)
 library(fresh)
 library(shinyscreenshot)
 library(devtools)
-library(capture)
-library(capture)
 library(shinyjs)
 library(shinytitle)
 library(plotly)
@@ -28,6 +26,10 @@ library(reactable)
 library(caret)
 library(gmailr)
 library(webshot2) 
+library(capture)
+library(lightgbm)
+
+
 # Reference for some code
 # https://sambornstein.shinyapps.io/Simple_Sabermetrics_Post_Game_Report/
 
@@ -35,6 +37,18 @@ library(webshot2)
 # Loading in Data
 master <- read.csv("Master_data.csv", header = TRUE)
 sd_data <- read.csv("Master_data.csv", header = TRUE)
+
+
+
+# matchup score csv (name it Opponent_Matchup)
+matchup <- read.csv("um_matchups_bats.csv", header = TRUE)
+
+matchuparms <- read.csv("um_matchups_arms.csv", header = TRUE)
+
+
+stuff_model <- lgb.load("stuff_model.txt")
+
+
 
 
 
@@ -88,13 +102,12 @@ ball_accuracy_colors <- scale_fill_manual(values = c("0" = "green4", "1" = 'whit
 strike_accuracy_colors <- scale_fill_manual(values = c("0" = "white", "1" = 'red'))
 
 # List of MSU Pitchers
-msu_pitchers = c("Addari, Michael", "Arbaugh, Aidan", "Berghorst, Adam", "Carson, Andrew", "Chapman, Max",
-                 "Cook, Harrison", "Dzierwa, Joseph", "Farquhar, Tate", "Higgins, Nolan", "Hopman, Zach",
-                 "Klann, Robert", "Kok, Caden", "Martin, Brian", "Matheny, Noah", "Pianto, Dominic",
-                 "Powers, Nick", "Ruhle, Stephen", "Rush, Wyatt", "Seymour, Randy", 
-                 "Sitarz, Gavin", "Szczepaniak, Ryan",
-                 "Szczepanski, Tommy", "Brewer, Garrett", "Huffman, Jaxon", "Grundman, Gannon", "Moczydlowsky, Gavin", "Mishoulam, Aaron", "Kaminski, Dylan", "Falish, Quinn", "Jones, Jack", "Bassett-Kennedy, Sam",
-                 "Long, Hunter", 'Ferazzi, Nick', 'Pikur, Logan', 'Sturgess, Isaac','Donovan, Aidan','Horvath, Tyler', 'Crow, Kyle', 'Viebrook, George', 'Custer, Carson','Liss, Jordan', 'Agar, Jeff', 'Chambers, Brady','Maxey, Zach','Zimmer, Ryan', 'Klug, Josh','Agosta, Branden','Fidelino, Nathan')
+msu_pitchers = c( 
+  "Dzierwa, Joseph", "Farquhar, Tate", "Higgins, Nolan", 
+  "Matheny, Noah", "Pianto, Dominic",
+  "Sitarz, Gavin", "Szczepaniak, Ryan",
+  "Szczepanski, Tommy", "Brewer, Garrett", "Huffman, Jaxon", "Grundman, Gannon", "Moczydlowsky, Gavin",  
+  'Pikur, Logan', 'Sturgess, Isaac','Donovan, Aidan','Horvath, Tyler', 'Viebrock, George',   'Chambers, Brady','Maxey, Zach','Zimmer, Ryan', 'Klug, Josh')
 
 # List of MSU Batters
 msu_batters = c("Anderson, Jacob", "Broecker, Bryan", "Busch, Sam", "Dresselhouse, Jacob",
@@ -106,6 +119,24 @@ msu_batters_wasi = c("Jacob Anderson", "Bryan Broecker", "Sam Busch", "Jake Dres
                      "Trent Farquhar", "Jack Frank", "Mitch Jebb", "Dillon Kark", "John Malcom",
                      "Casey Mayes", "Randy Seymour", "Jayden Terres", "Sam Thompson",
                      "Brock Vradenburg", "Christian Williams", "Greg Ziegler")
+
+
+
+
+
+msu_pitchersmatchup = c("Dzierwa, Joseph", "Farquhar, Tate", "Higgins, Nolan", 
+                        "Matheny, Noah", "Pianto, Dominic",
+                        "Sitarz, Gavin", "Szczepaniak, Ryan",
+                        "Szczepanski, Tommy", "Brewer, Garrett", "Huffman, Jaxon", "Grundman, Gannon", "Moczydlowsky, Gavin",  
+                        'Pikur, Logan', 'Sturgess, Isaac','Donovan, Aidan','Horvath, Tyler', 'Viebrock, George',   'Chambers, Brady','Maxey, Zach','Zimmer, Ryan', 'Klug, Josh')
+
+
+
+msu_battersmatchup = c("Anderson, Jacob", "Seymour, Randy")
+
+
+
+
 
 
 
@@ -150,7 +181,6 @@ master <- master %>%
       Pitcher == 'Rush, Wyatt' & TaggedPitchType == 'Slider' ~ 'Cutter',
       Pitcher == 'Dzierwa, Joseph' & TaggedPitchType == 'Curveball' ~ 'Slider',
       Pitcher == 'Cook, Harrison' & TaggedPitchType == 'Fastball' ~ 'Sinker',
-      Pitcher == 'Szczepaniak, Ryan' & TaggedPitchType == 'Slider' ~ 'Curveball',
       Pitcher == 'Farquhar, Tate' & TaggedPitchType == 'Curveball' ~ 'Slider',
       Pitcher == 'Hopman, Zach' & TaggedPitchType == 'Sinker' ~ 'Fastball',
       Pitcher == 'Chapman, Max' & TaggedPitchType == 'Curveball' ~ 'Slider',
@@ -159,8 +189,10 @@ master <- master %>%
       Pitcher == 'Carson, Andrew' & TaggedPitchType == 'Curveball' ~ 'Slider',
       Pitcher == 'Pianto, Dominic' & TaggedPitchType == 'Fastball' ~ 'Sinker',
       Pitcher == 'Mishoulam, Aaron' & TaggedPitchType == 'Fastball' ~ 'Sinker',
+      Pitcher == 'Pikur, Logan' & TaggedPitchType == 'Changeup' ~ 'Slider',
       Pitcher == 'Kaminski, Dylan' & TaggedPitchType == 'Changeup' ~ 'Splitter',
-      Pitcher == 'Zimmer, Ryan' & TaggedPitchType == 'Changeup' ~ 'Splitter',
+      Pitcher == 'Donovan, Aidan' & TaggedPitchType == 'Cutter' ~ 'Fastball',
+      Pitcher == 'Zimmer, Ryan' & TaggedPitchType == 'ChangeUp' ~ 'Splitter',
       TRUE ~ TaggedPitchType),
     # Setting up season dates (random dates in middle of season are practice scrimmages)
     Season = case_when(
@@ -168,7 +200,7 @@ master <- master %>%
       (Date >= '2023-02-17' & Date <= '2023-08-01') ~ "2023 - SEASON",
       (Date >= '2023-09-10' & Date <= '2024-02-15'|Date == '2023-12-02'| Date == '2023-10-02') ~ "2024 - SCRIMMAGES",
       (Date >= '2024-02-16' & Date <= '2024-08-01') ~ '2024 - SEASON',
-      (Date >= '2024-08-20' & Date <= '2024-09-07') ~ '2025 - PENS',
+      (Date >= '2024-08-20' & Date <= '2024-09-07' | Date == '2024-10-28'| Date == '2024-11-04' | Date == '2024-11-11'| Date == '2024-11-18') ~ '2025 - PENS',
       (Date >= '2024-09-08' & Date <= '2025-02-13') ~ "2025 - SCRIMMAGES",
       (Date >= '2025-02-14' & Date <= '2025-08-01') ~ '2025 - SEASON'),
     Year = case_when(
@@ -403,7 +435,7 @@ credentials <- data.frame(
                "Big10champs",
                "TerresFanClub",
                "goat",
-               "shorts"),
+               "meow"),
   stringsAsFactors = FALSE
 )
 
@@ -426,7 +458,7 @@ ui <- secure_app(
   
   tags_top = tags$div
   (
-    tags$h1("LAST UPDATED: 10/16/24 11:29 PM",
+    tags$h1("LAST UPDATED: 03/11/25 9:22 PM",
             style="align:center;position:relative;top:-90px;margin:0"),
     tags$h3("Spartan Savant",
             style="align:center;position:relative;top:-90px;margin:0"),
@@ -507,31 +539,38 @@ ui <- secure_app(
                              tags$style(HTML('#home_to_PitcherReport_tab{color: white; background-color: #173F35}
                                    #home_to_PitcherReport_tab:hover{background-color:#696158}')),
                              
-                             actionButton("home_to_UmpireReport_tab", "View Umpire Reports"),
-                             tags$style(HTML('#home_to_UmpireReport_tab{color: white; background-color: #173F35}
-                                   #home_to_UmpireReport_tab:hover{background-color:#696158}')),
                              
                              actionButton("home_to_vandy_report_tab", "View Vandy Report"),
                              tags$style(HTML('#home_to_vandy_report_tab{color: white; background-color: #173F35}
                                    #home_to_vandy_report_tab:hover{background-color:#696158}')),
                              
                              
+                             actionButton("home_to_matchup_scores_pitchers_tab", "View Matchup Scores (Pitchers)"),
+                             tags$style(HTML('#home_to_matchup_scores_pitchers_tab{color: white; background-color: #173F35}
+                                   #home_to_matchup_scores_pitchers_tab:hover{background-color:#696158}')),
+                             
+                             
+                             
                              actionButton("home_to_batter_report_tab", "View Batter Report"),
                              tags$style(HTML('#home_to_batter_report_tab{color: white; background-color: #173F35}
                                    #home_to_batter_report_tab:hover{background-color:#696158}')),
                              
+                            
+                             
+                             actionButton("home_to_matchup_scores_batters_tab", "View Matchup Scores (Batters)"),
+                             tags$style(HTML('#home_to_matchup_scores_batters_tab{color: white; background-color: #173F35}
+                                   #home_to_matchup_scores_batters_tab:hover{background-color:#696158}')),
+                             
+                             actionButton("home_to_UmpireReport_tab", "View Umpire Reports"),
+                             tags$style(HTML('#home_to_UmpireReport_tab{color: white; background-color: #173F35}
+                                   #home_to_UmpireReport_tab:hover{background-color:#696158}')),
                              
                              actionButton("home_to_Reload_tab", "Reload Data"),
                              tags$style(HTML('#home_to_Reload_tab{color: Black; background-color: #173F35}
                                    #home_to_Reload_tab:hover{background-color:#696158}')),
                              
-                             actionButton("home_to_upload_tab", "Upload CSV Data"),
-                             tags$style(HTML('#home_to_upload_tab{color: white; background-color: #173F35}
-                                   #home_to_upload_tab:hover{background-color:#696158}')),
                              
-                             actionButton("home_to_TeamOffense_tab", "View Team Offense"),
-                             tags$style(HTML('#home_to_TeamOffense_tab{color: white; background-color: #173F35}
-                                   #home_to_TeamOffense_tab:hover{background-color:#696158}')),
+                             
                              br(),
                              hr(style = "border-color: black;"),
                              br(),
@@ -564,32 +603,6 @@ ui <- secure_app(
     
     
     
-    
-    tabPanel(
-      useShinyjs(),
-      title = "Upload",
-      useShinyjs(),  
-      titlePanel("Upload Game CSV"),
-      sidebarLayout(
-        sidebarPanel(
-          fileInput("file", "Input CSV File", accept = ".csv"),
-          textInput("umpire", "Umpire Name", value = ""),
-          textInput("game_number", "Game Number", value = ""),
-          actionButton("upload", "Upload")
-        ),
-        mainPanel(
-          withSpinner(textOutput("status"), type = 8, id = "spinner_status")  
-        )
-      ),
-      tags$head(
-        tags$style(
-          HTML(
-            "#status.error { color: red; }
-         #status.success { color: green; }"
-          )
-        )
-      )
-    ),
     
     
     
@@ -624,7 +637,7 @@ ui <- secure_app(
             selectInput(
               inputId = "SeasonInput_pitcher",
               label = "Select Season",
-              choices = c('2025 - SCRIMMAGES',  '2025 - PENS', '2025 - ALL',
+              choices = c('2025 - SEASON', '2025 - SCRIMMAGES',  '2025 - PENS', '2025 - ALL',
                           '2024 - SCRIMMAGES', '2024 - SEASON', '2024 - ALL',
                           '2023 - SCRIMMAGES', '2023 - SEASON', '2023 - ALL',
                           'ALL'))
@@ -770,7 +783,7 @@ ui <- secure_app(
             selectInput(
               inputId = "SeasonInput_umpire",
               label = "Select Season",
-              choices = c('2025 - SCRIMMAGES', '2024 - SCRIMMAGES', '2024 - SEASON',
+              choices = c('2025 - SEASON', '2024 - SCRIMMAGES', '2024 - SEASON',
                           '2023 - SCRIMMAGES', '2023 - SEASON'))
           ),
           
@@ -782,14 +795,14 @@ ui <- secure_app(
               choices = "")
           ),
           
-          # column(
-          #   2,
-          #   selectInput(
-          #     inputId = "DHInput_umpire",
-          #     label = "Select Game (If DH)",
-          #     choices = ""
-          #   )
-          # ),
+           column(
+             2,
+             selectInput(
+               inputId = "DHInput_umpire",
+               label = "Select Game (If DH)",
+               choices = ""
+             )
+           ),
           
           column(
             2,
@@ -893,451 +906,6 @@ ui <- secure_app(
       )
     ),
     
-    # Team Offense Tab
-    tabPanel(
-      
-      "Team Offense",
-      
-      column(
-        10,
-        offset = 1,
-        titlePanel("Team Offense"),
-        hr(style = "border-color: black;"),
-        
-        
-        fluidRow(
-          
-          column(
-            2,
-            selectInput(
-              inputId = "SeasonInput_offense",
-              label = "Select Season",
-              choices = c('2025 - SCRIMMAGES','2024 - SCRIMMAGES', '2024 - SEASON', '2024 - ALL',
-                          '2023 - SCRIMMAGES', '2023 - SEASON', '2023 - ALL',
-                          'ALL'))
-          ),
-          
-          column(
-            12,
-            tabsetPanel(type = "tabs", 
-                        
-                        tabPanel("wASI", 
-                                 tags$style(
-                                   type = 'text/css',
-                                   HTML(".nav-tabs>li>a {color: #173F35;}
-                                        .nav-tabs li a:hover, .nav-tabs > a {color: white !important;background-color:#696158 !important;}")),
-                                 fluidRow(
-                                   column(
-                                     2,
-                                     p("", style = "margin-bottom: 25px;"),
-                                     capture_pdf(
-                                       selector = "#wASI",
-                                       filename = "wASI_Report",
-                                       loading = loading(),
-                                       margins = 25,
-                                       icon("download"), " Download")),
-                                 ), 
-                                 br(),
-                                 wellPanel(
-                                   style = "background: white; border-color:black; border-width:2px",
-                                   id = "wASI",
-                                   fluidRow(
-                                     column(
-                                       2,
-                                       img(
-                                         src = "SpartanSavantJW.PNG",
-                                         height = 150,
-                                         width = 150
-                                       ),
-                                       align = "center"
-                                     ),
-                                     column(
-                                       4,
-                                       h2(strong(("Andrew Stone Index"))),
-                                       hr(style = "border-color: black;"),
-                                       sliderInput("PAs", "Number of PAs",
-                                                   min = 0,
-                                                   max = max(wasi_players$PA),
-                                                   value = c(3.1*max(wasi_players$G), max(wasi_players$PA))),
-                                       p("Default setting is 3.1 PA per team game"),
-                                       style = "padding-right:0px;"),
-                                     column(
-                                       6,
-                                       h2("Team Offense"),
-                                       hr(style = "border-color: black;"),
-                                       align = "right",
-                                       style = "padding-left:0px;
-                                       padding-right:50px"
-                                     )
-                                   ),
-                                   hr(style = "border-color: black;"),
-                                   br(),
-                                   fluidRow(
-                                     column(
-                                       12,
-                                       h3(strong("wASI Leaderboard")),
-                                       DT::dataTableOutput("wASI_table"),
-                                       align = "center"
-                                     )
-                                   ),
-                                   hr(style = "border-color: black;"),
-                                   fluidRow(
-                                     # DT + text boxes column
-                                     column(12,
-                                            # DataTable column:
-                                            column(
-                                              6,
-                                              offset = 3,
-                                              h3(strong("ASI Team Stats")),
-                                              DT::dataTableOutput("wASI_team_table"),
-                                              align = "center"
-                                            ), 
-                                            # Text Box Column:
-                                            column(3,
-                                                   column(7,
-                                                          div(
-                                                            style = "border-style: solid; border-color: black;",
-                                                            HTML("<h5><b><span style=background-color:lightgreen>Notes:</span></b></h5>
-                                                       <p>HH = BIP > 90<br>
-                                                       Chase = Swing @ Ball<br></p>")),
-                                                          align = 'center'),
-                                                   column(5,
-                                                          div(
-                                                            style = "border-style: solid; border-color: black;",
-                                                            HTML("<h5><b><span style=background-color:lightgreen>wASI scale:</span></b></h5>
-                                                       wOBA = 30%<br>
-                                                       HH% = 25%<br>
-                                                       Chase% = 25%<br>
-                                                       OPS = 10%<br>
-                                                       QAB = 10%<br>")),
-                                                          align = 'center'),
-                                            ),
-                                     ),
-                                   ),
-                                   br(),
-                                 ),
-                                 p(em("If the contents of this page appear distorted, please decrease your web browser zoom to 80% or 90%."),
-                                   align = "center",
-                                   style = "font-size:20px;"),
-                        ),
-                        
-                        ### Offense Stats Tab ###
-                        tabPanel("Stats", 
-                                 tags$style(
-                                   type = 'text/css',
-                                   HTML(".nav-tabs>li>a {color: #173F35;}
-                                        .nav-tabs li a:hover, .nav-tabs > a {color: white !important;background-color:#696158 !important;}")),
-                                 fluidRow(
-                                   column(
-                                     2,
-                                     p("", style = "margin-bottom: 25px;"),
-                                     capture_pdf(
-                                       selector = "#Stats",
-                                       filename = "Stats_Report",
-                                       loading = loading(),
-                                       margins = 25,
-                                       icon("download"), " Download")),
-                                 ), 
-                                 br(),
-                                 wellPanel(
-                                   style = "background: white; border-color:black; border-width:2px",
-                                   id = "Stats",
-                                   fluidRow(
-                                     column(
-                                       2,
-                                       img(
-                                         src = "SpartanSavantJW.PNG",
-                                         height = 150,
-                                         width = 150
-                                       ),
-                                       align = "center"
-                                     ),
-                                     column(
-                                       4,
-                                       h2(strong(("Batting Stats"))),
-                                       hr(style = "border-color: black;"),
-                                       style = "padding-right:0px;"),
-                                     column(
-                                       6,
-                                       h2("Team Offense"),
-                                       hr(style = "border-color: black;"),
-                                       align = "right",
-                                       style = "padding-left:0px;
-                                       padding-right:50px"
-                                     )
-                                   ),
-                                   hr(style = "border-color: black;"),
-                                   br(),
-                                   fluidRow(
-                                     column(
-                                       12,
-                                       h3(strong("Stats Leaderboard")),
-                                       DT::dataTableOutput("offense_stats_table"),
-                                       align = "center"
-                                     )
-                                   ),
-                                   hr(style = "border-color: black;"),
-                                   fluidRow(
-                                     column(
-                                       12,
-                                       h3(strong("Team Stats")),
-                                       DT::dataTableOutput("offense_stats_team_table"),
-                                       align = "center"
-                                     )
-                                   ),
-                                   br(),
-                                 ),
-                                 p(em("If the contents of this page appear distorted, please decrease your web browser zoom to 80% or 90%."),
-                                   align = "center",
-                                   style = "font-size:20px;"),
-                        ),
-                        
-                        
-                        
-                        ######### BLAST TAB ############
-                        
-                        tabPanel("Blast Motion",
-                                 fluidRow(
-                                   column(
-                                     2,
-                                     p("", style = "margin-bottom: 25px;"),
-                                     capture_pdf(
-                                       selector = "#BlastMotion",
-                                       filename = "BlastMotion_Report",
-                                       loading = loading(),
-                                       margins = 25,
-                                       icon("download"), " Download")),
-                                 ), 
-                                 br(),
-                                 wellPanel(
-                                   style = "background: white; border-color:black; border-width:2px",
-                                   id = "BlastMotion",
-                                   fluidRow(
-                                     column(
-                                       2,
-                                       img(
-                                         src = "SpartanSavantJW.PNG",
-                                         height = 150,
-                                         width = 150
-                                       ),
-                                       align = "center"
-                                     ),
-                                     column(
-                                       4,
-                                       h2(strong(("Blast Motion"))),
-                                       hr(style = "border-color: black;"),
-                                       
-                                       p("", style = "margin-bottom: 25px;"),
-                                       dateRangeInput(inputId = "DateRangeInput", 
-                                                      label = "Select Date Range",
-                                                      start = min(blast$Date, na.rm = TRUE),
-                                                      end = max(blast$Date, na.rm = TRUE)),
-                                       style = "padding-right:0px;"),
-                                     
-                                     column(
-                                       6,
-                                       h2("Team Offense"),
-                                       hr(style = "border-color: black;"),
-                                       align = "right",
-                                       style = "padding-left:0px;
-                                       padding-right:50px"
-                                     )
-                                   ),
-                                   hr(style = "border-color: black;"),
-                                   br(),
-                                   fluidRow(
-                                     column(
-                                       12,
-                                       h3(strong("Blast Motion Data")),
-                                       dataTableOutput("Blast_table"),
-                                       align = "center"
-                                     )
-                                   ),
-                                   br(),
-                                 ),
-                                 p(em("If the contents of this page appear distorted, please decrease your web browser zoom to 80% or 90%."),
-                                   align = "center",
-                                   style = "font-size:20px;"),
-                        ),
-            ),
-          )
-        ),
-      ),
-    ),
-    
-    
-    # Scrimmage Stats Tab
-    tabPanel(
-      
-      "Scrimmage Stats",
-      
-      column(
-        10,
-        offset = 1,
-        titlePanel("Scrimmage Stats"),
-        hr(style = "border-color: black;"),
-        
-        
-        fluidRow(
-          
-          
-          column(
-            12,
-            tabsetPanel(type = "tabs", 
-                        
-                        tabPanel("Batting", 
-                                 tags$style(
-                                   type = 'text/css',
-                                   HTML(".nav-tabs>li>a {color: #173F35;}
-                                        .nav-tabs li a:hover, .nav-tabs > a {color: white !important;background-color:#696158 !important;}")),
-                                 fluidRow(
-                                   column(
-                                     2,
-                                     p("", style = "margin-bottom: 25px;"),
-                                     capture_pdf(
-                                       selector = "#Batting_Scrimmage",
-                                       filename = "Batting_Scrimmage_Stats",
-                                       loading = loading(),
-                                       margins = 25,
-                                       icon("download"), " Download")),
-                                 ), 
-                                 br(),
-                                 wellPanel(
-                                   style = "background: white; border-color:black; border-width:2px",
-                                   id = "Batting_Scrimmage",
-                                   fluidRow(
-                                     column(
-                                       2,
-                                       img(
-                                         src = "SpartanSavantJW.PNG",
-                                         height = 150,
-                                         width = 150
-                                       ),
-                                       align = "center"
-                                     ),
-                                     column(
-                                       4,
-                                       h2(strong(("Batting Stats"))),
-                                       hr(style = "border-color: black;"),
-                                       style = "padding-right:0px;"),
-                                     column(
-                                       6,
-                                       h2("Team Offense"),
-                                       hr(style = "border-color: black;"),
-                                       align = "right",
-                                       style = "padding-left:0px;
-                                       padding-right:50px"
-                                     )
-                                   ),
-                                   hr(style = "border-color: black;"),
-                                   br(),
-                                   fluidRow(
-                                     column(
-                                       12,
-                                       h3(strong("Player Stats")),
-                                       DT::dataTableOutput("player_batting_stats"),
-                                       align = "center"
-                                     )
-                                   ),
-                                   hr(style = "border-color: black;"),
-                                   fluidRow(
-                                     # DT + text boxes column
-                                     column(12,
-                                            # DataTable column:
-                                            column(
-                                              12,
-                                              h3(strong("Team Stats")),
-                                              DT::dataTableOutput("team_batting_stats"),
-                                              align = "center"
-                                            ), 
-                                     ),
-                                   ),
-                                   br(),
-                                 ),
-                                 p(em("If the contents of this page appear distorted, please decrease your web browser zoom to 80% or 90%."),
-                                   align = "center",
-                                   style = "font-size:20px;"),
-                        ),
-                        
-                        ### Pitching Scrimmage Stats Sub-Tab ###
-                        tabPanel("Pitching", 
-                                 tags$style(
-                                   type = 'text/css',
-                                   HTML(".nav-tabs>li>a {color: #173F35;}
-                                        .nav-tabs li a:hover, .nav-tabs > a {color: white !important;background-color:#696158 !important;}")),
-                                 fluidRow(
-                                   column(
-                                     2,
-                                     p("", style = "margin-bottom: 25px;"),
-                                     capture_pdf(
-                                       selector = "#Pitching_Scrimmage",
-                                       filename = "Pitching_Scrimmage_Stats",
-                                       loading = loading(),
-                                       margins = 25,
-                                       icon("download"), " Download")),
-                                 ), 
-                                 br(),
-                                 wellPanel(
-                                   style = "background: white; border-color:black; border-width:2px",
-                                   id = "Pitching_Scrimmage",
-                                   fluidRow(
-                                     column(
-                                       2,
-                                       img(
-                                         src = "SpartanSavantJW.PNG",
-                                         height = 150,
-                                         width = 150
-                                       ),
-                                       align = "center"
-                                     ),
-                                     column(
-                                       4,
-                                       h2(strong(("Pitching Stats"))),
-                                       hr(style = "border-color: black;"),
-                                       style = "padding-right:0px;"),
-                                     column(
-                                       6,
-                                       h2("Team Pitching"),
-                                       hr(style = "border-color: black;"),
-                                       align = "right",
-                                       style = "padding-left:0px;
-                                       padding-right:50px"
-                                     )
-                                   ),
-                                   hr(style = "border-color: black;"),
-                                   br(),
-                                   fluidRow(
-                                     column(
-                                       12,
-                                       h3(strong("Player Stats")),
-                                       DT::dataTableOutput("player_pitching_stats"),
-                                       align = "center"
-                                     )
-                                   ),
-                                   hr(style = "border-color: black;"),
-                                   fluidRow(
-                                     column(
-                                       12,
-                                       h3(strong("Team Stats")),
-                                       DT::dataTableOutput("team_pitching_stats"),
-                                       align = "center"
-                                     )
-                                   ),
-                                   br(),
-                                 ),
-                                 p(em("If the contents of this page appear distorted, please decrease your web browser zoom to 80% or 90%."),
-                                   align = "center",
-                                   style = "font-size:20px;"),
-                        ),
-                        
-            ),
-          )
-        ),
-      ),
-    ),
-    ## END Scrimmage Stats Tab
-    
-    
     
     
     tabPanel(
@@ -1364,7 +932,7 @@ ui <- secure_app(
             selectInput(
               inputId = "Season_Select_Input",
               label = "Select Season",
-              choices = c('2025 - SCRIMMAGES', '2024 - SEASON', '2024 - SCRIMMAGES', '2023 - SEASON', '2023 - SCRIMMAGES')
+              choices = c('2025 - SEASON', '2025 - SCRIMMAGES', '2024 - SEASON', '2024 - SCRIMMAGES', '2023 - SEASON', '2023 - SCRIMMAGES')
             )
           ),
           
@@ -1507,13 +1075,127 @@ ui <- secure_app(
     
     
     
+    ####### Matchup Scores (Batters) #########
+    
+    tabPanel(
+      "Matchup Scores (Batters)",
+      id = "Matchup_Batters",
+      fluidPage(
+        
+        titlePanel("Batters Matchup Scores (48 = Avg.)"),
+        hr(style = "border-color: black;"),
+        
+        fluidRow(
+          column(
+            4,
+            selectInput(
+              inputId = "Pitcher_Inputtt",
+              label = "Select Pitcher:",
+              choices = unique(matchup$Pitcher)  # Populate directly from CSV
+            )
+          ),
+          column(
+            3,
+            p("", style = "margin-bottom: 25px;"),
+            capture_pdf(
+              selector = "#Matchup_Reportt",
+              filename = paste("Matchup_Michigan"),
+              loading = loading(),
+              margins = 10,
+              icon("download"), " Download"),
+          )
+        ),
+        
+        
+        br(),
+        br(),
+        hr(style = "border-color: black;"),
+        
+        wellPanel(
+          id = "Matchup_Reportt",
+          fluidRow(
+            column(
+              12,
+              h3(strong(textOutput("matchup_titlee")), align = "center"),  # Dynamic Title
+              reactableOutput("matchup_table"),
+              br()
+            )
+          ),
+        
+        br(),
+        
+        p(
+          em("If the contents of this page appear distorted, please adjust your web browser zoom to 80% or 90%."),
+          align = "center",
+          style = "font-size: 14px;"
+        )
+      )
+    )
+  ),
+    
+    
+    ####### Matchup Scores (Pitchers) #########
+    
+  tabPanel(
+    "Matchup Scores (Pitchers)",
+    id = "Matchup_Pitchers",
+    fluidPage(
+      
+      titlePanel("Pitchers Matchup Scores (48 = Avg.)"),
+      hr(style = "border-color: black;"),
+      
+      fluidRow(
+        column(
+          4,
+          selectInput(
+            inputId = "Pitcher_Inputttt",
+            label = "Select Pitcher:",
+            choices = unique(matchuparms$Pitcher)  # Populate directly from CSV
+          )
+        ),
+        column(
+          3,
+          p("", style = "margin-bottom: 25px;"),
+          capture_pdf(
+            selector = "#Matchup_Report",
+            filename = paste("Matchup_Michigan"),
+            loading = loading(),
+            margins = 10,
+            icon("download"), " Download"
+          )
+        )
+      ),
+      
+      br(),
+      br(),
+      hr(style = "border-color: black;"),
+      
+      wellPanel(
+        id = "Matchup_Report",
+        fluidRow(
+          column(
+            12,
+            h3(strong(textOutput("matchup_title")), align = "center"),  # Dynamic Title
+            reactableOutput("matchup_tablee"),
+            br()
+          )
+        ),
+        
+        br(),
+        
+        p(
+          em("If the contents of this page appear distorted, please adjust your web browser zoom to 80% or 90%."),
+          align = "center",
+          style = "font-size: 14px;"
+        )
+      )
+    )
+  ),
+  
     
     
     
-    
-    
-    
-    
+    ############ vandy report ###########
     
     tabPanel(
       "Vandy Report",
@@ -1540,7 +1222,7 @@ ui <- secure_app(
             selectInput(
               inputId = "Season_Input",
               label = "Season",
-              choices = c('2025 - SCRIMMAGES', '2025 - PENS', '2024 - SEASON', '2024 - SCRIMMAGES', '2023 - SEASON', '2023 - SCRIMMAGES')
+              choices = c('2025 - SEASON', '2025 - SCRIMMAGES', '2025 - PENS', '2024 - SEASON', '2024 - SCRIMMAGES', '2023 - SEASON', '2023 - SCRIMMAGES')
             )
           ),
           
@@ -1569,17 +1251,17 @@ ui <- secure_app(
               margins = 10,
               icon("download"), " Download"),
           ),
-      
-        column(
-          3,
-          dateRangeInput(
-            inputId = "date_range",
-            label = "Select Date Range:",
-            start = "2024/09/01",
-            end = max(master$Date, na.rm = TRUE)
-          )
+          
+          column(
+            3,
+            dateRangeInput(
+              inputId = "date_range",
+              label = "Select Date Range:",
+              start = "2024/09/01",
+              end = max(master$Date, na.rm = TRUE)
+            )
+          ),
         ),
-      ),
         
         hr(style = "border-color: black;"),
         wellPanel(style = "background: white; border-color:black; border-width:2px;",
@@ -1688,6 +1370,8 @@ ui <- secure_app(
     
     
     
+    
+    
     ########## End of Tabs ###########
     
   )
@@ -1714,28 +1398,34 @@ server <- function(input, output, session) {
   observeEvent(input$home_to_PitcherReport_tab, {
     updateTabsetPanel(session, "navbar", selected = "Pitcher Reports")
   })
-  observeEvent(input$home_to_UmpireReport_tab, {
-    updateTabsetPanel(session, "navbar", selected = "Umpire Reports")
+  
+  
+  observeEvent(input$home_to_vandy_report_tab, {
+    updateTabsetPanel(session, "navbar", selected = "Vandy Report")
   })
+  
+  
+  observeEvent(input$home_to_matchup_scores_pitchers_tab, {
+    updateTabsetPanel(session, "navbar", selected = "Matchup Scores (Pitchers)")
+  })
+  
   observeEvent(input$home_to_Reload_tab, {
     session$reload()
   })
   
-  observeEvent(input$home_to_upload_tab, {
-    updateTabsetPanel(session, "navbar", selected = "Upload")
-  })
-  
-  
-  observeEvent(input$home_to_TeamOffense_tab, {
-    updateTabsetPanel(session, "navbar", selected = "Team Offense")
-  })
   
   observeEvent(input$home_to_batter_report_tab, {
     updateTabsetPanel(session, "navbar", selected = "Batter Report")
   })
   
-  observeEvent(input$home_to_vandy_report_tab, {
-    updateTabsetPanel(session, "navbar", selected = "Vandy Report")
+
+  
+  observeEvent(input$home_to_matchup_scores_batters_tab, {
+    updateTabsetPanel(session, "navbar", selected = "Matchup Scores (Batters)")
+  })
+  
+  observeEvent(input$home_to_UmpireReport_tab, {
+    updateTabsetPanel(session, "navbar", selected = "Umpire Reports")
   })
   
   # observeEvent(input$action_logout, {
@@ -1777,12 +1467,12 @@ server <- function(input, output, session) {
   
   # Updating DH options based on Date Selection (Ump reports)
   # Old logic was to create a column in csv "GameNumber" and put '1' in each row. Put '2' in each row if row is for second game of a double header. This way you can filter on shiny app between game 1 and 2 if Date is the same.
-  # observeEvent(
-  #   input$GameInput_umpire,
-  #   updateSelectInput(session,
-  #                     inputId = "DHInput_umpire",
-  #                     label = "Select Game (if DH)", 
-  #                     choices = sort(c(as.character(unique(master$GameNumber[master$Date == input$GameInput_umpire]))))))
+   observeEvent(
+     input$GameInput_umpire,
+     updateSelectInput(session,
+                       inputId = "DHInput_umpire",
+                       label = "Select Game (if DH)", 
+                       choices = sort(c(as.character(unique(master$GameNumber[master$Date == input$GameInput_umpire]))))))
   
   
   
@@ -1876,26 +1566,109 @@ server <- function(input, output, session) {
   
   
   
-  observeEvent(input$Season_Input,{
-    
-    updateSelectInput(session,
-                      inputId = "Pitcher_Input",
-                      label = "Pitcher",
-                      choices = sort(unique(master$Pitcher[master$Pitcher != "" & master$PitcherTeam %in% c("MIC_SPA", "MIC_PRA") & master$Season == input$Season_Input]))
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+
+  
+  
+  
+  
+  ############################### matchup score hitters #################################################################
+  
+  
+  
+  
+  
+  filtered_matchup <- reactive({
+    req(input$Pitcher_Inputtt)
+    matchup %>%
+      filter(Pitcher == input$Pitcher_Inputtt) %>%
+      select(Batter, PitcherThrows, `Weighted`, `Scale`)
+  })
+  
+  # Render the table with Weighted Score and 20-80 Scale
+  output$matchup_table <- renderReactable({
+    req(filtered_matchup())
+    reactable(
+      filtered_matchup(),
+      columns = list(
+        Batter = colDef(name = "Batter"),
+        PitcherThrows = colDef(name = "Pitcher Hand"),
+        Weighted = colDef(name = "Weighted Score"),
+        Scale = colDef(name = "20-80 Scale")
+      ),
+      bordered = TRUE,
+      striped = TRUE,
+      highlight = TRUE,
+      pagination = FALSE
     )
-    
-    observeEvent(input$Pitcher_Input, {
-      updateSelectInput(session,
-                        inputId = "Game_Select_Inputt",
-                        label = "Select Game",
-                        choices = c("All", rev(sort(as.character(unique(master$Date[master$Season == input$Season_Input & master$Pitcher == input$Pitcher_Input])))))
-      )
-    })
+  })
+  
+  output$matchup_titlee <- renderText({
+    req(input$Pitcher_Inputtt)  
+    paste(input$Pitcher_Inputtt, "-  Matchup Scores")
+  })
+  
+  
+  ############################### matchup score pitchers #################################################################
+  
+  
+  
+  
+  
+  filtered_matchupp <- reactive({
+    req(input$Pitcher_Inputttt)
+    matchuparms %>%
+      filter(Pitcher == input$Pitcher_Inputttt) %>%
+      select(Batter, PitcherThrows, `Weighted`, `Scale`)
+  })
+  
+  # Render the table with Weighted Score and 20-80 Scale
+  output$matchup_tablee <- renderReactable({
+    req(filtered_matchupp())
+    reactable(
+      filtered_matchupp(),
+      columns = list(
+        Batter = colDef(name = "Batter"),
+        PitcherThrows = colDef(name = "Pitcher Hand"),
+        Weighted = colDef(name = "Weighted Score"),
+        Scale = colDef(name = "20-80 Scale")
+      ),
+      bordered = TRUE,
+      striped = TRUE,
+      highlight = TRUE,
+      pagination = FALSE
+    )
+  })
+  
+  output$matchup_title <- renderText({
+    req(input$Pitcher_Inputttt)  
+    paste(input$Pitcher_Inputttt, "-  Matchup Scores")
   })
   
   
   
-  # Reactive expressions to capture the selected batter and game date
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
   selected_pitcher <- reactive({
     req(input$Pitcher_Input)
     input$Pitcher_Input
@@ -1906,7 +1679,6 @@ server <- function(input, output, session) {
     input$Game_Select_Inputt
   })
   
-  # Render the text outputs in the UI
   output$selected_pitcher <- renderText({
     selected_pitcher()
   })
@@ -2187,9 +1959,9 @@ server <- function(input, output, session) {
     
     
     single_usage_graph <- ggplot(single_game_usage_data, aes(x = reorder(TaggedPitchType, percent), y = percent, fill = TaggedPitchType)) +
-      geom_bar(stat = "identity", width = 0.3) +  # Remove the manual fill color to use mapped colors
-      coord_flip() +  # Flip coordinates to make it horizontal
-      theme_minimal() +  # Use a minimal theme
+      geom_bar(stat = "identity", width = 0.3) + 
+      coord_flip() +  
+      theme_minimal() + 
       theme(
         axis.title.y = element_blank(),
         axis.title.x = element_text(size = 12),
@@ -2199,14 +1971,14 @@ server <- function(input, output, session) {
       ) +
       geom_text(aes(label = paste0(round(percent, 1), "%")), hjust = -0.3, color = "black", size = 5) +
       labs(y = "Percentage (%)") +
-      scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +  # Adjust the y-axis to make room for labels
+      scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +  
       pitch_colors_fill 
     
     
     usage_graph <- ggplot(usage_graph_data, mapping = aes(x = Date, y = rolling_percent, color = TaggedPitchType)) + 
       geom_line(size = 1) + 
       geom_point(size = 1) + 
-      pitch_colors +  # Apply the color palette for lines and points
+      pitch_colors +  
       theme_bw() + 
       labs(title = "", x = "Date", y = "Percentage (%)", color = "Pitch")
     
@@ -2220,16 +1992,16 @@ server <- function(input, output, session) {
       
       ggplot(data, aes(x = RelSpeed, y = fct_relevel(TaggedPitchType, rev(items_in_order)), fill = TaggedPitchType)) +
         geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01, alpha = 0.7) +
-        pitch_colors_fill +  # Apply the fill color palette
+        pitch_colors_fill +  
         labs(title = "Pitch Velo Distribution", x = "Velocity (mph)", y = NULL) +
         theme_minimal() +
         theme(
           axis.title.y = element_blank(), 
-          axis.text.y = element_text(hjust = 1, size = 12),  # Align pitch type labels to the left
+          axis.text.y = element_text(hjust = 1, size = 12),  
           axis.ticks.y = element_blank(), 
           legend.position = "none",
           plot.title = element_text(hjust = 0.5, size = 20),
-          text = element_text(size = 14)  # Improve text clarity
+          text = element_text(size = 14)  
         ) +
         geom_vline(data = data %>% group_by(TaggedPitchType) %>% summarise(mean_speed = mean(RelSpeed, na.rm = TRUE)),
                    aes(xintercept = mean_speed), color = "black", linetype = "dashed") +
@@ -2373,7 +2145,7 @@ server <- function(input, output, session) {
             name = "Zone%",
             align = "center",
             style = function(value) {
-              list(background = color_scale(value, 48.7, high_good = TRUE))
+              list(background = color_scale(value, 54.7, high_good = TRUE))
             }
           ),
           `Chase%` = colDef(
@@ -2509,38 +2281,38 @@ server <- function(input, output, session) {
       mutate(SD_Score = 
                ifelse((Swing == "Take" & Zones == "Heart" & Count == "0-0" & TaggedPitchType %in% c("Curveball", "Slider")),-2.25,
                       ifelse((Swing == "Take" & Zones == "Zone" & Count == "0-0" & TaggedPitchType %in% c("Curveball", "Slider")),-2,
-               ifelse((Swing == "Swing" & Zones == "Waste") | (Count == "3-2" & Swing == "Take" & Zones == "Heart") | (Swing == "Take" & Count == "2-2" & Zones == "Heart") | (Swing == "Take" & Zones == "Heart" & Count == "1-1") | (Swing == "Take" & Zones == "Heart" & Count == "1-2") | (Swing == "Take" & Zones == "Heart" & Count == "0-2"),-5, 
-                               ifelse(Swing == "Take" & ((Count == "3-2" & Zones == "Zone") | (Zones == "Heart" & Count == "3-1") | (Zones == "Zone" & Count == "2-2") | (Zones == "Zone" & Count == "1-2") | (Zones == "Zone" & Count == "0-2") | Zones == "Heart" & Count == "0-0"),-4.5,
-                                      ifelse((Swing == "Swing" & Zones == "Chase" & Count == "3-0") | (Swing == "Take" & ((Zones == "Zone" & Count == "0-0") | (Zones == "Heart" & Count == "0-1") | (Zones == "Heart" & Count == "1-0") | (Zones == "Zone" & Count == "1-1") | (Zones == "Heart" & Count == "2-1") | (Zones == "Zone" & Count == "3-1"))),-4,
-                                             ifelse(Swing == "Take" & ((Zones == "Zone" & Count == "1-0") | (Zones == "Zone" & Count == "0-1") | (Zones == "Heart" & Count == "2-0") | (Zones == "Zone" & Count == "2-1")), -3.5, 
-                                                    ifelse((Swing == "Take" & (Zones == "Zone" & Count == "2-0")) | (Swing == "Swing" & ((Zones == "Chase" & Count == "3-1") | (Zones == "Shadow" & Count == "3-0") | (Zones == "Chase" & Count == "2-0"))), -3,
-                                                           ifelse(Swing == "Swing" & (Zones == "Chase" & Count == "3-2" | (Zones == "Chase" & Count == "1-0")),-2.5,
-                                                                  ifelse(Swing == "Swing" & ((Zones == "Chase" & Count == "0-0") | (Zones == "Chase" & Count == "0-1") | (Zones == "Chase" & Count == "1-1") | (Zones == "Chase" & Count == "2-2")),-2,
-                                                                         ifelse(Swing == "Swing" & Zones == "Chase" & Count == "2-1",-1.5,
-                                                                                ifelse(Swing == "Swing" & ((Zones == "Chase" & Count == "0-2") | (Zones == "Chase" & Count == "1-2")),-1,
-                                                                                       ifelse(Swing == "Take" & (Zones == "Shadow" & Count == "0-2") | (Zones == "Shadow" & Count == "1-2") | (Zones == "Shadow" & Count == "2-2"),-0.5,
-                                                                                              ifelse((Swing == "Swing" & (Zones == "Shadow" & Count == "0-0")|(Zones == "Shadow" & Count == "0-1") | (Zones == "Shadow" & Count == "1-0") | (Zones == "Zone" & Count == "3-0")) | (Swing == "Take" & ((Zones == "Shadow" & Count == "1-1") | (Zones == "Zone" & Count == "3-0") | (Zones == "Heart" & Count == "3-0") | (Zones == "Shadow" & Count == "3-1") | (Zones == "Shadow" & Count == "3-2") )),0, 
-                                                                                                     ifelse((Swing == "Swing" & ((Zones == "Shadow" & Count == "3-2") | (Zones == "Heart" & Count == "3-0") | (Zones == "Shadow" & Count == "1-1"))) | (Swing == "Take" & Zones == "Shadow" & Count == "2-1"),0.5,
-                                                                                                            ifelse((Swing == "Swing" & Zones == "Shadow" & Count == "3-1" | (Swing == "Take" & ((Zones == "Chase" & Count == "3-1") | (Zones == "Waste" & Count == "3-1") | (Zones == "Waste" & Count == "3-0") | (Zones == "Waste" & Count == "2-1") | (Zones == "Chase" & Count == "2-0") | (Zones == "Shadow" & Count == "2-0") | (Zones == "Waste" & Count == "2-0") | (Zones == "Waste" & Count == "1-1") | (Zones == "Chase" & Count == "0-1") | (Zones == "Chase" & Count == "1-0") | (Zones == "Shadow" & Count == "1-0") | (Zones == "Waste" & Count == "1-0") | (Zones == "Chase" & Count == "0-1") | (Zones == "Shadow" & Count == "0-1") | (Zones == "Chase" & Count == "2-0") | (Zones == "Waste" & Count == "0-1") | (Zones == "Chase" & Count == "0-0") | (Zones == "Shadow" & Count == "0-0")  | (Zones == "Waste" & Count == "0-0")))),1,
-                                                                                                                   ifelse((Swing == "Swing" & ((Zones == "Shadow" & Count == "0-2") | (Zones == "Shadow" & Count == "1-0") | (Zones == "Shadow" & Count == "1-2") | (Zones == "Shadow" & Count == "2-1") | (Zones == "Shadow" & Count == "2-2"))) | (Swing == "Take" & (Zones == "Chase" & Count == "0-2") | (Zones == "Waste" & Count == "0-2") | (Zones == "Waste" & Count == "1-2") | (Zones == "Chase" & Count == "1-2") | (Zones == "Chase" & Count == "2-1") | (Zones == "Waste" & Count == "2-2") | (Zones == "Chase" & Count == "0-1")  | (Zones == "Waste" & Count == "3-2")),1.5,
-                                                                                                                          ifelse((Swing == "Take" & ((Zones == "Chase" & Count == "3-2") | (Zones == "Chase" & Count == "2-2") | (Zones == "Chase" & Count == "1-1"))),2,
-                                                                                                                                 ifelse((Swing == "Swing" & Zones == "Shadow" & Count == "2-0") | (Swing == "Take" & Zones == "Chase" & Count == "3-0"),2.5,
-                                                                                                                                        ifelse((Swing == "Swing" & Zones == "Zone" & Count == "0-1") | (Swing == "Take" & Zones == "Shadow" & Count == "3-0"),3.5,
-                                                                                                                                               ifelse(Swing == "Swing" & ((Zones == "Zone" & Count == "0-0") | (Zones == "Zone" & Count == "1-0") | (Zones == "Zone" & Count == "1-1")),4,
-                                                                                                                                                      ifelse(Swing == "Swing" & ((Zones == "Zone" & Count == "0-2") | (Zones == "Zone" & Count == "1-2") | (Zones == "Zone" & Count == "2-0") | (Zones == "Zone" & Count == "2-1") | (Zones == "Zone" & Count == "2-2") | (Zones == "Zone" & Count == "3-2")),4.5,
-                                                                                                                                                             ifelse(Swing == "Swing" & ((Zones == "Heart" & Count == "3-2") | (Zones == "Heart" & Count == "3-1") | (Zones == "Zone" & Count == "3-1") | (Zones == "Heart" & Count == "2-2") | (Zones == "Heart" & Count == "2-1") | (Zones == "Heart" & Count == "2-0") | (Zones == "Heart" & Count == "1-2") | (Zones == "Heart" & Count == "1-1") | (Zones == "Heart" & Count == "1-0") | (Zones == "Heart" & Count == "0-2") | (Zones == "Heart" & Count == "0-1") | (Zones == "Heart" & Count == "0-0")),5,NA
-                                                                                                                                                             )))))))))))))))))))))))
+                             ifelse((Swing == "Swing" & Zones == "Waste") | (Count == "3-2" & Swing == "Take" & Zones == "Heart") | (Swing == "Take" & Count == "2-2" & Zones == "Heart") | (Swing == "Take" & Zones == "Heart" & Count == "1-1") | (Swing == "Take" & Zones == "Heart" & Count == "1-2") | (Swing == "Take" & Zones == "Heart" & Count == "0-2"),-5, 
+                                    ifelse(Swing == "Take" & ((Count == "3-2" & Zones == "Zone") | (Zones == "Heart" & Count == "3-1") | (Zones == "Zone" & Count == "2-2") | (Zones == "Zone" & Count == "1-2") | (Zones == "Zone" & Count == "0-2") | Zones == "Heart" & Count == "0-0"),-4.5,
+                                           ifelse((Swing == "Swing" & Zones == "Chase" & Count == "3-0") | (Swing == "Take" & ((Zones == "Zone" & Count == "0-0") | (Zones == "Heart" & Count == "0-1") | (Zones == "Heart" & Count == "1-0") | (Zones == "Zone" & Count == "1-1") | (Zones == "Heart" & Count == "2-1") | (Zones == "Zone" & Count == "3-1"))),-4,
+                                                  ifelse(Swing == "Take" & ((Zones == "Zone" & Count == "1-0") | (Zones == "Zone" & Count == "0-1") | (Zones == "Heart" & Count == "2-0") | (Zones == "Zone" & Count == "2-1")), -3.5, 
+                                                         ifelse((Swing == "Take" & (Zones == "Zone" & Count == "2-0")) | (Swing == "Swing" & ((Zones == "Chase" & Count == "3-1") | (Zones == "Shadow" & Count == "3-0") | (Zones == "Chase" & Count == "2-0"))), -3,
+                                                                ifelse(Swing == "Swing" & (Zones == "Chase" & Count == "3-2" | (Zones == "Chase" & Count == "1-0")),-2.5,
+                                                                       ifelse(Swing == "Swing" & ((Zones == "Chase" & Count == "0-0") | (Zones == "Chase" & Count == "0-1") | (Zones == "Chase" & Count == "1-1") | (Zones == "Chase" & Count == "2-2")),-2,
+                                                                              ifelse(Swing == "Swing" & Zones == "Chase" & Count == "2-1",-1.5,
+                                                                                     ifelse(Swing == "Swing" & ((Zones == "Chase" & Count == "0-2") | (Zones == "Chase" & Count == "1-2")),-1,
+                                                                                            ifelse(Swing == "Take" & (Zones == "Shadow" & Count == "0-2") | (Zones == "Shadow" & Count == "1-2") | (Zones == "Shadow" & Count == "2-2"),-0.5,
+                                                                                                   ifelse((Swing == "Swing" & (Zones == "Shadow" & Count == "0-0")|(Zones == "Shadow" & Count == "0-1") | (Zones == "Shadow" & Count == "1-0") | (Zones == "Zone" & Count == "3-0")) | (Swing == "Take" & ((Zones == "Shadow" & Count == "1-1") | (Zones == "Zone" & Count == "3-0") | (Zones == "Heart" & Count == "3-0") | (Zones == "Shadow" & Count == "3-1") | (Zones == "Shadow" & Count == "3-2") )),0, 
+                                                                                                          ifelse((Swing == "Swing" & ((Zones == "Shadow" & Count == "3-2") | (Zones == "Heart" & Count == "3-0") | (Zones == "Shadow" & Count == "1-1"))) | (Swing == "Take" & Zones == "Shadow" & Count == "2-1"),0.5,
+                                                                                                                 ifelse((Swing == "Swing" & Zones == "Shadow" & Count == "3-1" | (Swing == "Take" & ((Zones == "Chase" & Count == "3-1") | (Zones == "Waste" & Count == "3-1") | (Zones == "Waste" & Count == "3-0") | (Zones == "Waste" & Count == "2-1") | (Zones == "Chase" & Count == "2-0") | (Zones == "Shadow" & Count == "2-0") | (Zones == "Waste" & Count == "2-0") | (Zones == "Waste" & Count == "1-1") | (Zones == "Chase" & Count == "0-1") | (Zones == "Chase" & Count == "1-0") | (Zones == "Shadow" & Count == "1-0") | (Zones == "Waste" & Count == "1-0") | (Zones == "Chase" & Count == "0-1") | (Zones == "Shadow" & Count == "0-1") | (Zones == "Chase" & Count == "2-0") | (Zones == "Waste" & Count == "0-1") | (Zones == "Chase" & Count == "0-0") | (Zones == "Shadow" & Count == "0-0")  | (Zones == "Waste" & Count == "0-0")))),1,
+                                                                                                                        ifelse((Swing == "Swing" & ((Zones == "Shadow" & Count == "0-2") | (Zones == "Shadow" & Count == "1-0") | (Zones == "Shadow" & Count == "1-2") | (Zones == "Shadow" & Count == "2-1") | (Zones == "Shadow" & Count == "2-2"))) | (Swing == "Take" & (Zones == "Chase" & Count == "0-2") | (Zones == "Waste" & Count == "0-2") | (Zones == "Waste" & Count == "1-2") | (Zones == "Chase" & Count == "1-2") | (Zones == "Chase" & Count == "2-1") | (Zones == "Waste" & Count == "2-2") | (Zones == "Chase" & Count == "0-1")  | (Zones == "Waste" & Count == "3-2")),1.5,
+                                                                                                                               ifelse((Swing == "Take" & ((Zones == "Chase" & Count == "3-2") | (Zones == "Chase" & Count == "2-2") | (Zones == "Chase" & Count == "1-1"))),2,
+                                                                                                                                      ifelse((Swing == "Swing" & Zones == "Shadow" & Count == "2-0") | (Swing == "Take" & Zones == "Chase" & Count == "3-0"),2.5,
+                                                                                                                                             ifelse((Swing == "Swing" & Zones == "Zone" & Count == "0-1") | (Swing == "Take" & Zones == "Shadow" & Count == "3-0"),3.5,
+                                                                                                                                                    ifelse(Swing == "Swing" & ((Zones == "Zone" & Count == "0-0") | (Zones == "Zone" & Count == "1-0") | (Zones == "Zone" & Count == "1-1")),4,
+                                                                                                                                                           ifelse(Swing == "Swing" & ((Zones == "Zone" & Count == "0-2") | (Zones == "Zone" & Count == "1-2") | (Zones == "Zone" & Count == "2-0") | (Zones == "Zone" & Count == "2-1") | (Zones == "Zone" & Count == "2-2") | (Zones == "Zone" & Count == "3-2")),4.5,
+                                                                                                                                                                  ifelse(Swing == "Swing" & ((Zones == "Heart" & Count == "3-2") | (Zones == "Heart" & Count == "3-1") | (Zones == "Zone" & Count == "3-1") | (Zones == "Heart" & Count == "2-2") | (Zones == "Heart" & Count == "2-1") | (Zones == "Heart" & Count == "2-0") | (Zones == "Heart" & Count == "1-2") | (Zones == "Heart" & Count == "1-1") | (Zones == "Heart" & Count == "1-0") | (Zones == "Heart" & Count == "0-2") | (Zones == "Heart" & Count == "0-1") | (Zones == "Heart" & Count == "0-0")),5,NA
+                                                                                                                                                                  )))))))))))))))))))))))
     
     
     batter_report <- batter_report %>% 
-    mutate(ball_or_strike = case_when(
-      (PitchCall == "FoulBall" | PitchCall == "FoulBallNotFieldable" | PitchCall == "FoulBallFieldable") & Strikes == 2 ~ NA_character_,
-      PitchCall == "StrikeCalled" | PitchCall == "StrikeSwinging" | PitchCall == "FoulBall" | PitchCall == "FoulBallNotFieldable" | PitchCall == "FoulBallFieldable" ~ "Strike",
-      PitchCall == "BallCalled" ~ "Ball",
-      TRUE ~ NA_character_
-    ),
-    count = paste0(Balls, "-", Strikes)
-    ) %>% 
+      mutate(ball_or_strike = case_when(
+        (PitchCall == "FoulBall" | PitchCall == "FoulBallNotFieldable" | PitchCall == "FoulBallFieldable") & Strikes == 2 ~ NA_character_,
+        PitchCall == "StrikeCalled" | PitchCall == "StrikeSwinging" | PitchCall == "FoulBall" | PitchCall == "FoulBallNotFieldable" | PitchCall == "FoulBallFieldable" ~ "Strike",
+        PitchCall == "BallCalled" ~ "Ball",
+        TRUE ~ NA_character_
+      ),
+      count = paste0(Balls, "-", Strikes)
+      ) %>% 
       mutate(RV = case_when(
         count == "3-0" & ball_or_strike == "Ball" ~ 0.051,
         count == "3-0" & ball_or_strike == "Strike" ~ -0.117,
@@ -2639,7 +2411,7 @@ server <- function(input, output, session) {
                 #xwOBA = as.numeric(format(round((length(KorBB[KorBB == "Walk"])*.69 + length(PitchCall[PitchCall == "HitByPitch"])*.72 + sum(hit_pred$Single)*.89 + sum(hit_pred$Double)*1.27 + sum(hit_pred$Triple)*1.62 + sum(hit_pred$HomeRun)*2.1)/(length(PlayResult[PlayResult == "Single" | PlayResult == "Double" | PlayResult == "Triple" | PlayResult == "HomeRun" | PlayResult == "Out" | PlayResult == "FieldersChoice"]) + length(KorBB[KorBB == "Strikeout" | KorBB == "Walk"]) + length(PitchCall[PitchCall == "HitByPitch"])), 3), 3)),
                 #'xwRC/PA' = format(round((xwOBA - .378) / 1.25 + .16 ,3),3),
                 #"Chase%" = paste0(as.integer(length(Swing[Swing == "Swing" & (PlateLocSide > 0.9975 | PlateLocSide  < -0.9975 | PlateLocHeight < 1.255 | PlateLocHeight > 3.5)]) / length(Swing[PlateLocSide > 0.9975 | PlateLocSide  < 0.9975 | PlateLocHeight < 1.255 | PlateLocHeight > 3.5]) * 100),"%"),
-                "Zone Whiff%" = paste0(format(round(length(PitchCall[PitchCall == "StrikeSwinging" & (Zones == "Heart" | Zones == "Zone")]) / length(Swing[Swing == "Swing" & (Zones == "Heart" | Zones == "Zone")]) * 100, 2), nsmall = 2), "%"),
+                # "Zone Whiff%" = paste0(format(round(length(PitchCall[PitchCall == "StrikeSwinging" & (Zones == "Heart" | Zones == "Zone")]) / length(Swing[Swing == "Swing" & (Zones == "Heart" | Zones == "Zone")]) * 100, 2), nsmall = 2), "%"),
                 #"1P-Str Swing%" = paste0(as.integer(length(PitchofPA[PitchofPA == 1 & Swing == "Swing" & (Zones == "Heart" | Zones == "Zone")]) / length(PitchofPA[PitchofPA == 1 & (Zones == "Heart" | Zones == "Zone")]) * 100),"%"),
                 #"2-Str Chase%" = paste0(as.integer(length(Swing[Swing == "Swing" & Strikes == 2 & (Zones == "Chase" | Zones == "Waste")]) / length(Strikes[Strikes == 2 & (Zones == "Waste" | Zones == "Chase")]) * 100),"%"),
                 'RV' = round(sum(RV, na.rm = TRUE),1), 
@@ -2896,31 +2668,31 @@ server <- function(input, output, session) {
                 EV = as.integer(mean(ExitSpeed, na.rm = TRUE)),
                 LA = as.integer((mean(Angle, na.rm = TRUE))))
     
-    # Define a named vector with batter names and their corresponding emails
+    
     batter_emails <- c(
       "Anderson, Jacob" = "meowboy6999@gmail.com",
       "Bright, Noah" = "rackrovick123343421@gmail.com"
     )
     
     observeEvent(input$send_report, {
-      # Define the URL and file path for the screenshot
-      url <- "https://jackt13.shinyapps.io/SpartanSavant/_w_990c26b4/"  # Replace with your app's URL if it's deployed
+      
+      url <- "https://jackt13.shinyapps.io/SpartanSavant/_w_990c26b4/"  
       file_path <- paste0(tempfile(), ".png")
       
-      # Capture the screenshot
+      
       webshot2::webshot(
         url, 
         file = file_path, 
-        selector = "#Batter_Report",  # Capture the specific tab
+        selector = "#Batter_Report", 
         vwidth = 1200, 
         vheight = 800
       )
       
-      # Get the email address based on the selected batter
+      
       batter_name <- selected_batter()
       recipient_email <- batter_emails[batter_name]
       
-      # Ensure the email is defined (in case of a mismatch)
+      
       if (!is.na(recipient_email)) {
         # Send the email with the screenshot attached
         send_email_with_attachment(file_path, batter_name, recipient_email)
@@ -2932,7 +2704,6 @@ server <- function(input, output, session) {
     send_email_with_attachment <- function(file_path, batter_name, recipient_email) {
       library(gmailr)
       
-      # Compose the email
       email <- gm_mime() %>%
         gm_to(recipient_email) %>%
         gm_from("jacktnovick@gmail.com") %>%
@@ -2940,7 +2711,7 @@ server <- function(input, output, session) {
         gm_text_body("Please find the attached report.") %>%
         gm_attach_file(file_path)
       
-      # Send the email
+      
       gm_send_message(email)
     }
     
@@ -3814,7 +3585,6 @@ server <- function(input, output, session) {
       theme(plot.title = element_text(size = 16,face = "bold",hjust = 0.5, vjust = -8),
             legend.position = "none", axis.title = element_blank())
   }, width = 450, height = 450)
-  
   
   
   # wASI Players Table --------------------------------------------------
