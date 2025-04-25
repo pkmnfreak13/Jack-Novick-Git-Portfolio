@@ -55,7 +55,7 @@
 - Script used to analyze and collect all MLS transfers from any time range in the past 10 years.
 - Directly uploads into a main database.
 - Used to help forecast team payroll and spend resources more efficiently.
-
+- Eventually moved and integrated within databricks
 
 
 # USPBL Analytics Hub
